@@ -13,6 +13,20 @@ from typing import Any
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
+from fox3d.logistics import (
+    CARRIER_QUOTE_RECORD_REMEDIATION,
+    carrier_quote_id,
+    classify_carrier_quote,
+    is_explicit_global_carrier_quote,
+    is_valid_tenant_carrier_quote,
+    scan_carrier_quote_records,
+    tenant_field_repair_hint,
+)
+from fox3d.release import (
+    is_matching_tenant_stem,
+    legacy_safe_tenant_filename,
+    safe_tenant_filename,
+)
 from fox3d.storelock import FileLock
 
 SCHEMA = "fox3d.backup.v1"
@@ -41,6 +55,10 @@ TENANT_OWNED = "TENANT_OWNED"
 TENANT_DERIVED = "TENANT_DERIVED"
 GLOBAL_REFERENCE = "GLOBAL_REFERENCE"
 GLOBAL_REFERENCE_POLICY = "EXCLUDE_FROM_TENANT_SCOPED"
+CARRIER_QUOTES_POLICY = (
+    "tenant carrier_quotes are TENANT_OWNED; explicit global quotes excluded (EXCLUDE_FROM_TENANT_SCOPED); "
+    "legacy tenantless quotes fail-closed"
+)
 MIXED_SPEC: dict[str, dict[str, str]] = {
     "lots/lots.json": {"lots": TENANT_OWNED},
     "workorders/workorders.json": {"orders": TENANT_OWNED, "operations": TENANT_DERIVED},
@@ -53,7 +71,7 @@ MIXED_SPEC: dict[str, dict[str, str]] = {
         "cartons": TENANT_OWNED,
         "pallets": TENANT_DERIVED,
         "shipments": TENANT_OWNED,
-        "carrier_quotes": GLOBAL_REFERENCE,
+        "carrier_quotes": TENANT_OWNED,
         "checklists": TENANT_OWNED,
         "handoffs": TENANT_OWNED,
     },
@@ -111,6 +129,7 @@ TENANT_MATRIX_DOMAINS = (
     "cartons",
     "palletPlans",
     "shipments",
+    "carrierQuotes",
     "checklists",
     "handoffs",
     "qc",
@@ -144,6 +163,7 @@ TENANT_MATRIX_DOMAINS = (
 )
 OPTIONAL_EMPTY_DOMAINS = frozenset(
     {
+        "carrierQuotes",
         "outbox",
         "portfolioIntents",
         "portfolioCandidates",
@@ -184,7 +204,11 @@ def _now() -> str:
 
 
 def _safe_tenant(tenant_id: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tenant_id)
+    return safe_tenant_filename(tenant_id)
+
+
+def _legacy_safe_tenant(tenant_id: str) -> str:
+    return legacy_safe_tenant_filename(tenant_id)
 
 
 def _is_volatile(path: Path) -> bool:
@@ -212,7 +236,34 @@ def _tenant_of(rec: Any) -> str | None:
     val = rec.get("tenantId")
     if val is None:
         val = rec.get("tenant_id")
-    return str(val) if val is not None else None
+    if not isinstance(val, str) or not val.strip():
+        return None
+    return val
+
+
+def _is_explicit_global_carrier_quote(rec: dict[str, Any]) -> bool:
+    return is_explicit_global_carrier_quote(rec)
+
+
+def _quote_id_of(rec: dict[str, Any]) -> str:
+    return carrier_quote_id(rec)
+
+
+def _block_carrier_quote_record_anomalies(rows: list[Any], rel: str, key: str) -> None:
+    """Fail closed on raw entries LogisticsService quarantines (same rule as preflight / readiness)."""
+    anomalies = scan_carrier_quote_records(rows)["anomalies"]
+    if not anomalies:
+        return
+    first = anomalies[0]
+    if first["reason"] == "duplicate_quote_id":
+        detail = f"duplicate quoteId={first['quoteId']} ({first['duplicateCount']} records)"
+    else:
+        detail = f"non-object record at rawIndex={first['rawIndex']}"
+    raise BackupError(
+        "BLOCKED",
+        f"ambiguous {rel}:{key} {detail}; {len(anomalies)} unresolved raw record(s); "
+        f"{CARRIER_QUOTE_RECORD_REMEDIATION}",
+    )
 
 
 def _filter_idem(idem: Any, tids: set[str]) -> dict[str, Any]:
@@ -309,10 +360,49 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
             continue
         kept: list[dict[str, Any]] = []
         parents = _parent_tenants(payload, rel, key) if policy == TENANT_DERIVED else {}
+        if rel == "logistics/logistics.json" and key == "carrier_quotes":
+            _block_carrier_quote_record_anomalies(rows, rel, key)
         for rec in rows:
             if not isinstance(rec, dict):
                 raise BackupError("BLOCKED", f"ambiguous non-object in {rel}:{key}")
             if policy == TENANT_OWNED:
+                if rel == "logistics/logistics.json" and key == "carrier_quotes":
+                    info = classify_carrier_quote(rec)
+                    if info["explicitGlobal"]:
+                        continue
+                    qid = _quote_id_of(rec)
+                    if not info["validTenantOwned"]:
+                        if info.get("tenantFieldConflict"):
+                            claimed_raw = info.get("claimedTenantIds") or []
+                            claimed = [tid for tid in claimed_raw if isinstance(tid, str)] if isinstance(claimed_raw, list) else []
+                            raise BackupError(
+                                "BLOCKED",
+                                f"ambiguous {rel}:{key} quoteId={qid} conflicting or invalid tenant fields; "
+                                "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) "
+                                "only as an explicit repair; "
+                                + tenant_field_repair_hint(qid, claimed),
+                            )
+                        if info["issue"] in {
+                            "conflicting_tenant_and_global",
+                            "conflicting_ownership_and_global",
+                            "unmigrated_global_reference",
+                            "invalid_ownership",
+                        }:
+                            raise BackupError(
+                                "BLOCKED",
+                                f"ambiguous {rel}:{key} quoteId={qid} global flag or unmigrated/rolled-back "
+                                "GLOBAL_REFERENCE ownership with missing or conflicting tenantId; "
+                                "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) first",
+                            )
+                        raise BackupError(
+                            "BLOCKED",
+                            f"ambiguous {rel}:{key} quoteId={qid} missing tenantId; "
+                            "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) first",
+                        )
+                    tid = info["tenantId"]
+                    if tid in tids:
+                        kept.append(rec)
+                    continue
                 tid = _tenant_of(rec)
                 if tid is None:
                     raise BackupError("BLOCKED", f"ambiguous {rel}:{key} missing tenantId")
@@ -353,13 +443,147 @@ def _include_file(rel: str, tids: set[str] | None) -> bool:
         return True
     parts = rel.split("/")
     if parts[0] in {"journal", "remnants"} and len(parts) >= 2:
-        stem = Path(parts[-1]).stem
-        return stem in {_safe_tenant(t) for t in tids}
+        if len(parts) != 2 or not parts[1].endswith(".json"):
+            return True
+        stem_lower = Path(parts[1]).stem.lower()
+        allowed = {
+            _safe_tenant(t).lower() for t in tids
+        } | {
+            _legacy_safe_tenant(t).lower() for t in tids
+        }
+        return stem_lower in allowed
     if parts[0] == "dam" and len(parts) >= 2:
         return parts[1] in tids
     if parts[0] == "tx":
         return True
     return True
+
+
+def _has_canonical_store_file(root: Path, store_dir: str, tid: str) -> bool:
+    canonical = root / store_dir / f"{_safe_tenant(tid)}.json"
+    if not canonical.exists():
+        return False
+    try:
+        raw = read_json(canonical)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(raw, dict):
+        return False
+    return raw.get("tenantId") == tid
+
+
+def _inspect_tenant_store_file(
+    src: Path, root: Path, rel: str, tids: set[str]
+) -> tuple[str, dict[str, Any] | None]:
+    parts = rel.split("/")
+    if len(parts) != 2 or not parts[1].endswith(".json"):
+        raise BackupError("BLOCKED", f"unexpected file in tenant store: {rel}")
+    try:
+        payload = read_json(src)
+    except FileNotFoundError:
+        raise
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise BackupError("BLOCKED", f"malformed {rel}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise BackupError("BLOCKED", f"malformed {rel}: expected object")
+
+    if parts[0] == "journal":
+        raw_tid = payload.get("tenantId")
+        if not isinstance(raw_tid, str) or not raw_tid.strip():
+            raise BackupError("BLOCKED", f"ambiguous journal tenant {rel}: missing tenantId")
+        header_tid = raw_tid
+        if not is_matching_tenant_stem(header_tid, src.stem):
+            raise BackupError(
+                "BLOCKED",
+                f"ambiguous journal tenant {rel}: tenantId {header_tid!r} mismatches filename",
+            )
+        events = payload.get("events")
+        if not isinstance(events, list):
+            raise BackupError("BLOCKED", f"malformed {rel}:events expected list")
+        for ev in events:
+            if not isinstance(ev, dict):
+                raise BackupError("BLOCKED", f"malformed journal event in {rel}")
+            ev_tid = _tenant_of(ev)
+            if not isinstance(ev_tid, str) or not ev_tid.strip():
+                raise BackupError("BLOCKED", f"ambiguous {rel}:events missing tenantId")
+            if ev_tid != header_tid:
+                raise BackupError("BLOCKED", f"mixed tenant journal {rel}")
+        if header_tid not in tids:
+            return ("EXCLUDE", None)
+        canonical = root / "journal" / f"{_safe_tenant(header_tid)}.json"
+        if src != canonical and _has_canonical_store_file(root, "journal", header_tid):
+            return ("EXCLUDE", None)
+        return ("RAW", None)
+
+    rows = _require_list(payload, rel, "items")
+    if rows is None:
+        raise BackupError("BLOCKED", f"malformed {rel}:items expected list")
+    raw_tid = payload.get("tenantId")
+    header_tid_opt: str | None = None
+    if "tenantId" in payload and raw_tid is not None:
+        if not isinstance(raw_tid, str) or not raw_tid.strip():
+            raise BackupError("BLOCKED", f"ambiguous remnants tenant {rel}: invalid tenantId")
+        if not is_matching_tenant_stem(raw_tid, src.stem):
+            raise BackupError(
+                "BLOCKED",
+                f"ambiguous remnants tenant {rel}: tenantId {raw_tid!r} mismatches filename",
+            )
+        header_tid_opt = raw_tid
+    item_tids: set[str] = set()
+    for rec in rows:
+        if not isinstance(rec, dict):
+            raise BackupError("BLOCKED", f"ambiguous non-object in {rel}:items")
+        rec_tid = _tenant_of(rec)
+        if not isinstance(rec_tid, str) or not rec_tid.strip():
+            raise BackupError("BLOCKED", f"ambiguous {rel}:items missing tenantId")
+        if not is_matching_tenant_stem(rec_tid, src.stem):
+            raise BackupError(
+                "BLOCKED",
+                f"ambiguous {rel}:items tenantId {rec_tid!r} mismatches filename",
+            )
+        item_tids.add(rec_tid)
+    if not rows:
+        if header_tid_opt is None:
+            raise BackupError("BLOCKED", f"ambiguous empty remnants {rel}: missing tenantId")
+        if header_tid_opt not in tids:
+            return ("EXCLUDE", None)
+        canonical = root / "remnants" / f"{_safe_tenant(header_tid_opt)}.json"
+        if src != canonical and _has_canonical_store_file(root, "remnants", header_tid_opt):
+            return ("EXCLUDE", None)
+        return ("RAW", None)
+    if header_tid_opt is not None and src.stem == _safe_tenant(header_tid_opt):
+        if item_tids != {header_tid_opt}:
+            raise BackupError("BLOCKED", f"mixed tenant in canonical remnants {rel}")
+        if header_tid_opt not in tids:
+            return ("EXCLUDE", None)
+        return ("RAW", None)
+    if header_tid_opt is None:
+        raise BackupError("BLOCKED", f"ambiguous remnants {rel}: missing header tenantId")
+    if len(item_tids) == 1 and item_tids == {header_tid_opt}:
+        if header_tid_opt not in tids:
+            return ("EXCLUDE", None)
+        canonical = root / "remnants" / f"{_safe_tenant(header_tid_opt)}.json"
+        if src != canonical and _has_canonical_store_file(root, "remnants", header_tid_opt):
+            return ("EXCLUDE", None)
+        return ("RAW", None)
+    active_legacy_tids = {
+        t for t in tids if not _has_canonical_store_file(root, "remnants", t)
+    }
+    kept = [rec for rec in rows if _tenant_of(rec) in active_legacy_tids]
+    if not kept:
+        return ("EXCLUDE", None)
+    kept_tids = {str(_tenant_of(rec)) for rec in kept}
+    if len(kept_tids) > 1:
+        raise BackupError("BLOCKED", f"mixed legacy remnants {rel} spans multiple requested tenants")
+    kept_tid = next(iter(kept_tids))
+    filtered = {
+        **payload,
+        "tenantId": kept_tid,
+        "kind": payload.get("kind") or "remnant-store",
+        "count": len(kept),
+        "items": kept,
+    }
+    return ("FILTERED", filtered)
 
 
 def _source_files(root: Path) -> list[Path]:
@@ -395,6 +619,15 @@ def _relevant_fingerprint(root: Path, tids: set[str] | None) -> dict[str, str]:
     for path in _source_files(root):
         rel = _validate_rel(path.relative_to(root).as_posix())
         if not _include_file(rel, tids):
+            continue
+        if tids and rel.startswith(("journal/", "remnants/")):
+            mode, filtered_store = _inspect_tenant_store_file(path, root, rel, tids)
+            if mode == "EXCLUDE":
+                continue
+            if mode == "FILTERED" and filtered_store is not None:
+                out[rel] = _payload_fingerprint(filtered_store)
+                continue
+            out[rel] = sha256_bytes(path.read_bytes())
             continue
         if tids and rel.startswith("tx/"):
             payload = read_json(path)
@@ -436,6 +669,17 @@ def _copy_one(src: Path, root: Path, data_root: Path, tids: set[str] | None) -> 
     target = data_root / Path(*rel.split("/"))
     if src.is_symlink() or target.is_symlink():
         raise BackupError("BLOCKED", f"symlink {rel}")
+    if tids and rel.startswith(("journal/", "remnants/")):
+        mode, filtered_store = _inspect_tenant_store_file(src, root, rel, tids)
+        if mode == "EXCLUDE":
+            return None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if mode == "FILTERED" and filtered_store is not None:
+            atomic_write_json(target, filtered_store)
+        else:
+            shutil.copy2(src, target)
+        blob = target.read_bytes()
+        return {"path": rel, "sha256": sha256_bytes(blob), "size": len(blob)}
     if rel.startswith("tx/") and tids:
         payload = read_json(src)
         if not isinstance(payload, dict):
@@ -465,6 +709,12 @@ def backup_pilot(root: Path, dest: Path, *, tenant_ids: list[str] | None = None)
         raise BackupError("BLOCKED", "backup destination must be empty")
     dest.mkdir(parents=True, exist_ok=True)
     data_root = dest / "data"
+    if tenant_ids is not None:
+        for raw_t in tenant_ids:
+            if not isinstance(raw_t, str) or (raw_t != "" and not raw_t.strip()):
+                raise BackupError("BLOCKED", "invalid tenantId in tenant_ids")
+        if any(raw_t == "" for raw_t in tenant_ids):
+            raise BackupError("BLOCKED", "empty tenantId in tenant_ids")
     tids = set(tenant_ids or []) or None
     last_error = "inconsistent snapshot"
     for _ in range(SNAPSHOT_RETRIES):
@@ -526,9 +776,10 @@ def backup_pilot(root: Path, dest: Path, *, tenant_ids: list[str] | None = None)
                 "consistentSnapshot": True,
                 "snapshotPathSetBound": True,
                 "collectionPolicy": {
-                    "TENANT_OWNED": "record.tenantId authoritative; missing tenantId fail-closed",
+                    "TENANT_OWNED": "record.tenantId authoritative (including logistics.carrier_quotes); missing tenantId fail-closed",
                     "TENANT_DERIVED": "pallet->carton, operation->workOrder, packet->release; cross-tenant fail-closed",
-                    "GLOBAL_REFERENCE": "logistics.carrier_quotes",
+                    "CARRIER_QUOTES": CARRIER_QUOTES_POLICY,
+                    "GLOBAL_REFERENCE": "explicit global quotes only (globalQuote/isGlobal/allowGlobal without tenantId); excluded from tenant-scoped backups; legacy tenantless quotes fail-closed",
                     "GLOBAL_REFERENCE_POLICY": GLOBAL_REFERENCE_POLICY,
                 },
             }
@@ -1085,6 +1336,26 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
             ),
             "shipmentId",
         ),
+        "carrierQuotes": _entry(
+            sorted(
+                [
+                    {
+                        "quoteId": q.get("quoteId"),
+                        "carrier": q.get("carrier"),
+                        "service": q.get("service"),
+                        "charge": q.get("charge"),
+                        "currency": q.get("currency"),
+                        "dimDivisor": q.get("dimDivisor"),
+                        "validUntil": q.get("validUntil"),
+                        "quoteHash": q.get("quoteHash"),
+                        "tenantId": q.get("tenantId"),
+                    }
+                    for q in _owned(pilot.logistics.carrier_quotes, tenant_id)
+                ],
+                key=lambda r: str(r.get("quoteId")),
+            ),
+            "quoteId",
+        ),
         "checklists": _entry(
             sorted(
                 [
@@ -1553,6 +1824,7 @@ def tenant_domain_counts(plat: Any, tenant_id: str) -> dict[str, int]:
             ]
         ),
         "shipments": len(_owned(pilot.logistics.shipments, tenant_id)),
+        "carrierQuotes": len(_owned(pilot.logistics.carrier_quotes, tenant_id)),
         "checklists": len(_owned(pilot.logistics.checklists, tenant_id)),
         "handoffs": len(_owned(pilot.logistics.handoffs, tenant_id)),
         "qc": len(_owned(pilot.qc.checks, tenant_id)) + len(_owned(pilot.qc.defects, tenant_id)),
@@ -1575,7 +1847,17 @@ def evaluate_tenant_restore_matrix(
     restored_state = tenant_state_digest(restored, tenant_a)
     restored_b = tenant_state_digest(restored, tenant_b)
     quotes = list((restored.pilot.logistics.carrier_quotes or {}).values())
+    leaked_quotes = [
+        q
+        for q in quotes
+        if not isinstance(q, dict)
+        or not is_valid_tenant_carrier_quote(q)
+        or _tenant_of(q) != tenant_a
+        or _is_explicit_global_carrier_quote(q)
+    ]
     leakage = {k: restored_b[k]["count"] for k in TENANT_MATRIX_DOMAINS if restored_b[k]["count"]}
+    if leaked_quotes:
+        leakage["carrierQuotes"] = max(leakage.get("carrierQuotes", 0), len(leaked_quotes))
     identity_mismatch = [
         key for key in TENANT_MATRIX_DOMAINS if live_state[key] != restored_state[key]
     ]
@@ -1603,10 +1885,10 @@ def evaluate_tenant_restore_matrix(
             "equal": live_state["tenantStateDigest"] == restored_state["tenantStateDigest"],
         },
         "identityMismatch": identity_mismatch,
-        "tenantLeakageAbsent": not leakage and quotes == [],
+        "tenantLeakageAbsent": not leakage and not leaked_quotes,
         "tenantRequiredStatePreserved": not missing,
         "leakage": leakage,
         "missing": missing,
-        "carrierQuotesPolicy": GLOBAL_REFERENCE_POLICY,
+        "carrierQuotesPolicy": CARRIER_QUOTES_POLICY,
         "truthLabel": "REAL_LOGIC",
     }

@@ -82,6 +82,7 @@ def product_snapshot(rec: dict[str, Any], *, family: str | None = None) -> dict[
         "nesting": nesting,
         "nestingHash": rec.get("nestingHash") or nesting.get("nestingHash") or (rec.get("lineage") or {}).get("nestingHash"),
         "packing": packing,
+        "weight": dict(rec["weight"]) if isinstance(rec.get("weight"), dict) else {},
         "packagingHash": rec.get("packagingHash") or packing.get("packagingHash") or (rec.get("lineage") or {}).get("packagingHash"),
         "quote": rec.get("quote") or rec.get("landed") or rec.get("cost") or {},
         "instructions": rec.get("instructions") or {},
@@ -234,12 +235,12 @@ class ManufacturingReleaseService:
         rec["qcPlanHash"] = plan_hash(plan)
         rec["hashes"]["qcPlanHash"] = rec["qcPlanHash"]
         rec["snapshot"]["qcPlanHash"] = rec["qcPlanHash"]
-        artifacts = self._build_packet(rec)
-        self.packets[release_id] = artifacts
-        rec["checksumManifest"] = self._checksums(artifacts)
         rec["status"] = "VALIDATED"
         rec["validatedAt"] = _now()
         rec["releaseHash"] = self._release_hash(rec)
+        artifacts = self._build_packet(rec)
+        self.packets[release_id] = artifacts
+        rec["checksumManifest"] = self._checksums(artifacts)
         emit(
             self,
             "release.validate",
@@ -286,12 +287,13 @@ class ManufacturingReleaseService:
             raise PermissionError("Human Approval Gate: WAITING_APPROVAL required")
         if rec["status"] in FORBIDDEN_STATES:
             raise PermissionError("LIVE machine states forbidden")
+        release_hash = self._release_hash(rec)
+        if expected_release_hash and expected_release_hash != release_hash:
+            raise PermissionError("approval for release A cannot authorize release B")
         rec["status"] = "APPROVED_FOR_MANUAL_RELEASE"
         rec["approvedBy"] = actor
         rec["approvedAt"] = _now()
-        rec["releaseHash"] = self._release_hash(rec)
-        if expected_release_hash and expected_release_hash != rec["releaseHash"]:
-            raise PermissionError("approval for release A cannot authorize release B")
+        rec["releaseHash"] = release_hash
         rec["approvedReleaseHash"] = rec["releaseHash"]
         rec["approvalAuditHash"] = audit_hash or stable_hash(
             {"actor": actor, "releaseId": release_id, "releaseHash": rec["releaseHash"], "at": rec["approvedAt"]}

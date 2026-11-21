@@ -484,7 +484,7 @@
       <div class="fc-sec-head">
         <div>
           <h2 id="h-rd">五、商品研發產生（Product R&amp;D）</h2>
-          <p class="fc-sub">輸入客戶或企劃的自然語言需求，自動解析設計意圖、大量產生候選變體、執行工程規則檢核、成本估算與視覺評分，選出前三名最佳研發方案。<code>POST /api/product-rd/generate</code></p>
+          <p class="fc-sub">輸入客戶或企劃的自然語言需求，自動解析設計意圖、大量產生候選變體、執行工程規則檢核、成本估算與視覺評分，選出前三名最佳研發方案並依租戶持久化與人工核准。<code>POST /api/product-rd/generate</code> · <code>GET /api/product-rd/results</code> · <code>POST /api/product-rd/results/{id}/approve</code></p>
         </div>
       </div>
 
@@ -507,7 +507,8 @@
 
           <form id="fc-rd-form" class="fc-form" novalidate>
             <label>研發需求描述文字
-              <textarea id="rd-text" rows="3" required placeholder="請輸入商品需求，例如：客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000">客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000</textarea>
+              <textarea id="rd-text" rows="3" required aria-describedby="rd-text-hint" placeholder="請輸入商品需求，例如：客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000">客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000</textarea>
+              <span class="fc-mute-small" id="rd-text-hint">建議 2000 字以內；超過仍可送出（歷史清單僅顯示摘要）。</span>
             </label>
 
             <label>產生候選變體數量（10–50 組）
@@ -530,14 +531,14 @@
           <div id="rd-api-out" class="fc-result" hidden></div>
         </article>
 
-        <!-- 右：研發結果與 Top 候選排行 -->
+        <!-- 右：研發結果與 Top 候選排行 + 人工核准 -->
         <article class="fc-card" id="rd-summary-card" aria-live="polite">
           <div class="fc-card-top">
             <h3>研發方案結果與前三名候選</h3>
             <span id="rd-gate-badge" class="fc-badge neutral">尚未執行</span>
           </div>
 
-          <div id="rd-empty" class="fc-state">請在左側輸入研發需求並點擊「產生商品研發方案…」。</div>
+          <div id="rd-empty" class="fc-state">請在左側輸入研發需求並點擊「產生商品研發方案…」，或從下方歷史清單選取方案。</div>
 
           <div id="rd-body" hidden>
             <div class="fc-banners" id="rd-truth-badges"></div>
@@ -563,9 +564,70 @@
             </div>
 
             <div id="rd-base-actions" class="fc-actions"></div>
+
+            <!-- 研發方案人工核准區 -->
+            <div class="fc-approve-zone" id="rd-approve-zone">
+              <h4>人工核准放行（<code>POST /api/product-rd/results/{id}/approve</code>）</h4>
+              <p class="fc-note">核准後此研發方案將標記為 <code>APPROVED</code>、記錄核准時間 <code>approvedAt</code> 並建立製造候選資產；若視覺評分來源為 <code>MOCK</code>，核准後仍保留 <code>MOCK</code> 標示（實體 CNC 機台控制維持關閉 <code>liveMachineControl=false</code>）。</p>
+              <div class="fc-row-2 fc-form">
+                <label>核准人員姓名／工號
+                  <input type="text" id="rd-approve-actor" value="rd-lead" maxlength="120" placeholder="例：rd-manager">
+                </label>
+                <div class="fc-actions-bottom">
+                  <button type="button" id="rd-approve-prepare" class="fc-btn primary">核准此研發方案…</button>
+                </div>
+              </div>
+
+              <div id="rd-approve-confirm" class="fc-confirm" hidden>
+                <p class="fc-confirm-title" id="rd-approve-msg">確定要核准此研發方案嗎？</p>
+                <div class="fc-confirm-btns">
+                  <button type="button" id="rd-approve-yes" class="fc-btn primary">確認核准研發方案</button>
+                  <button type="button" id="rd-approve-no" class="fc-btn secondary">取消</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="rd-approve-out" class="fc-result" hidden></div>
           </div>
         </article>
       </div>
+
+      <!-- 歷史研發方案清單 -->
+      <article class="fc-card fc-stack" id="rd-history-card" aria-live="polite">
+        <div class="fc-card-top">
+          <div>
+            <h3>歷史商品研發方案清單</h3>
+            <span class="fc-mute-small" id="rd-history-meta">依建立時間由新到舊排列 · GET /api/product-rd/results</span>
+          </div>
+          <div class="fc-inline-lookup">
+            <input type="text" id="rd-lookup-id" placeholder="輸入研發單號 rdId" aria-label="研發單號">
+            <button type="button" id="rd-lookup-btn" class="fc-btn secondary">查詢方案</button>
+          </div>
+        </div>
+
+        <div id="rd-history-empty" class="fc-state">載入歷史研發方案中…</div>
+        <div class="fc-table-wrap" id="rd-history-wrap" hidden>
+          <table class="fc-table" id="rd-history-table">
+            <thead>
+              <tr>
+                <th>研發單號</th>
+                <th>建立時間</th>
+                <th>需求與母版規格</th>
+                <th>合格 / 變體數</th>
+                <th>評分來源</th>
+                <th>母版預覽</th>
+                <th>核准狀態</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="rd-history-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="fc-actions" id="rd-history-more-wrap" hidden>
+          <button type="button" id="rd-history-more-btn" class="fc-btn secondary">載入更多歷史方案</button>
+        </div>
+      </article>
     </section>
   </main>
 </body>

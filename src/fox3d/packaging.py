@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 
 from fox3d.ids import new_id, stable_hash
+from fox3d.release import TenantItemsMixin
 from fox3d.scene import CameraDSL, LightingDSL, SceneDSL, compile_scene_graph
 
 PACKAGING_TEMPLATES = (
@@ -32,7 +34,13 @@ TEMPLATE_DIMS = {
 }
 
 
-class PackagingEngine:
+class PackagingEngine(TenantItemsMixin):
+    _store_dir_name = "packaging"
+    _id_key = "packageId"
+
+    def __init__(self, platform: Any = None, *, root: Path | None = None) -> None:
+        self._init_item_store(platform, root)
+
     def build(
         self,
         *,
@@ -51,7 +59,7 @@ class PackagingEngine:
             lighting=LightingDSL(preset="PRODUCT_HARD"),
         )
         graph = compile_scene_graph(dsl, product={"dimensions": dims, "material": "cardboard" if kind in {"BOX", "CARTON", "DISPLAY_BOX"} else "plastic"})
-        return {
+        rec = {
             "packageId": mock_id,
             "tenantId": tenant_id,
             "template": kind,
@@ -63,6 +71,7 @@ class PackagingEngine:
             "outputs": ["product_still", "proposal_still", "commerce_still", "ad_still", "video_still"],
             "physicalProductionRequired": False,
         }
+        return self._store_item(mock_id, rec, tenant_id=tenant_id)
 
 
 BOX_FAMILIES = ("RSC_CARTON", "MAILER_BOX", "SLEEVE", "TRAY", "PDQ_TRAY")
@@ -234,10 +243,14 @@ class PackagingEngineeringDefinition:
         return rec
 
 
-class StructuralPackagingFactory:
-    def __init__(self, platform: Any) -> None:
-        self.platform = platform
-        self.items: dict[str, dict[str, Any]] = {}
+class StructuralPackagingFactory(TenantItemsMixin):
+    _store_dir_name = "packaging"
+    _id_key = "packageId"
+
+    def __init__(self, platform: Any = None, *, root: Path | None = None) -> None:
+        pkg_engine = getattr(platform, "packaging", None)
+        shared = pkg_engine if isinstance(pkg_engine, TenantItemsMixin) else None
+        self._init_item_store(platform, root, shared=shared)
 
     def build(
         self,
@@ -322,8 +335,7 @@ class StructuralPackagingFactory:
                 preview = self.platform.execute_job(preview)
             rec["preview"] = preview
             rec["previewLabel"] = "REAL" if preview.get("realBlender") and not preview.get("usedMock") else "MOCK"
-        self.items[product_id] = rec
-        return rec
+        return self._store_item(product_id, rec, tenant_id=tenant_id)
 
     def bundle_with_retail(
         self,

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>小空間 KD 商品組合 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/portfolio.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/portfolio.js"></script>
+</head>
+<body>
+  <main class="po">
+    <header class="po-head">
+      <p class="po-eyebrow">工廠 · KD 商品組合</p>
+      <h1>小空間 KD 商品組合</h1>
+      <p class="po-lede">建立組合需求、檢視候選（DFM／成本／分數）、排名、人工改排與原型送審核准。算圖與機台控制皆為規劃用途，非正式上線狀態。</p>
+    </header>
+
+    <section class="po-bar" aria-label="工作台設定">
+      <label class="po-tenant">租戶 <input id="po-tenant" spellcheck="false" aria-label="租戶編號" value="sonaqueen-home"></label>
+      <button type="button" id="po-refresh" class="po-btn">重新載入</button>
+      <p id="po-demand-label" class="po-demand" role="status">需求為估計值</p>
+      <p id="po-banner" class="po-banner" hidden role="status"></p>
+    </section>
+
+    <section class="po-grid">
+      <div class="po-col">
+        <h2>建立組合需求</h2>
+        <form id="po-intent-form" class="po-form">
+          <label>市場區隔
+            <select id="po-segment" name="segment">
+              <option value="STUDENT">STUDENT</option>
+              <option value="RENTAL_SMALL_SPACE">RENTAL_SMALL_SPACE</option>
+            </select>
+          </label>
+          <label>需求來源
+            <select id="po-demand-source" name="demandSource">
+              <option value="MOCK">MOCK（估計）</option>
+              <option value="MANUAL">MANUAL</option>
+              <option value="IMPORTED">IMPORTED</option>
+            </select>
+          </label>
+          <button type="submit" id="po-create-intent" class="po-btn po-btn-primary">建立需求</button>
+        </form>
+        <p id="po-intent-status" class="po-muted">尚未建立需求。</p>
+        <div class="po-actions">
+          <button type="button" id="po-generate" class="po-btn" disabled>產生候選</button>
+          <button type="button" id="po-plan" class="po-btn" disabled>用料規劃</button>
+          <button type="button" id="po-rank" class="po-btn po-btn-primary" disabled>計算排名</button>
+        </div>
+      </div>
+
+      <div class="po-col po-col-wide">
+        <h2>候選卡片</h2>
+        <div id="po-candidates-wrap" class="po-cards" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="po-section">
+      <h2>排名表 <span id="po-ranking-meta" class="po-muted"></span></h2>
+      <h3 id="po-stale-hint" class="po-warn" hidden>部分候選成本快照已過期，不會進入前十名。</h3>
+      <div class="po-scroll">
+        <table class="po-table" id="po-ranking-table" aria-label="排名">
+          <thead>
+            <tr><th>#</th><th>候選</th><th>種類</th><th>分數</th><th>DFM</th><th>成本</th><th>狀態</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="po-actions">
+        <button type="button" id="po-submit-approval" class="po-btn" disabled>送審選中候選</button>
+        <button type="button" id="po-approve" class="po-btn po-btn-primary" disabled>核准原型（需確認）</button>
+        <button type="button" id="po-supersede" class="po-btn" disabled>作廢選中候選</button>
+      </div>
+    </section>
+
+    <aside class="po-detail" id="po-detail" hidden>
+      <h3>詳情</h3>
+      <pre id="po-detail-pre" class="po-pre"></pre>
+    </aside>
+  </main>
+
+  <dialog id="po-override-dialog" class="po-dialog">
+    <form method="dialog" id="po-override-form">
+      <h2>人工改排</h2>
+      <p class="po-muted">送出前會快照 actor 與 reason，對話框開啟後欄位鎖定。</p>
+      <label>候選 ID <input id="po-override-candidate" type="text" required readonly></label>
+      <label>操作者 <input id="po-override-actor" type="text" required maxlength="120"></label>
+      <label>原因 <textarea id="po-override-reason" required maxlength="200" rows="3"></textarea></label>
+      <p id="po-override-snapshot" class="po-pre" hidden></p>
+      <menu class="po-dialog-actions">
+        <button type="button" id="po-override-cancel" value="cancel">取消</button>
+        <button type="submit" id="po-override-ok" value="ok" class="po-btn po-btn-primary">確認改排</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="po-confirm" class="po-dialog">
+    <form method="dialog" id="po-confirm-form">
+      <h2 id="po-confirm-title">請確認</h2>
+      <p id="po-confirm-text"></p>
+      <menu class="po-dialog-actions">
+        <button type="button" id="po-confirm-cancel" value="cancel">取消</button>
+        <button type="submit" id="po-confirm-ok" value="ok" class="po-btn po-btn-primary">確認</button>
+      </menu>
+    </form>
+  </dialog>
+</body>
+</html>

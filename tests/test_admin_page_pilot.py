@@ -37,7 +37,7 @@ def test_work_order_actions_require_confirmation_and_respect_tenant(platform):  
         path = f"/api/pilot/work-orders/{order}/{action}"
         assert client.post(path, headers=headers, json={}).status_code == (403 if action == "consume" else 409)
     assert client.post(f"/api/pilot/work-orders/{order}/complete", headers=headers, json={"confirm": True}).status_code == 200
-    assert client.post(f"/api/pilot/work-orders/{order}/complete", headers={"X-Tenant-Id": "other"}, json={"confirm": True}).status_code == 409
+    assert client.post(f"/api/pilot/work-orders/{order}/complete", headers={"X-Tenant-Id": "other"}, json={"confirm": True}).status_code == 404
 
 
 def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
@@ -54,3 +54,12 @@ def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
     assert "function isBlockedResult" in js and "veto === true" in js and "truthLabel" in js
     assert "連線失敗" in js and "已阻擋" in js
     assert "if (posting || pending) return" in js
+    assert "innerHTML" not in js
+    assert "尺寸不符待人工確認" in js
+    assert "/cartons" in js and "/measured" in js and "/packing-checklist" in js
+    assert "/packing-mismatch/resolve" in js and "packing-resolve-btn" in js
+    assert "refreshSeq" in js and "cartonLoadSeq" in js and "qcLoadInFlight" in js and "Promise.all" in js
+    assert "function actionButtons" in js and "setLocked(lockedBtns, true)" in js
+    assert "data-carton-load-done" in js and "markCartonLoadDone" in js
+    assert "fox3dFetchAllPages" in js and "fetchWorkOrdersOutcome" in js
+    assert "return refresh(task.workOrderId).then(function () {" in js

@@ -4,9 +4,10 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const form=$('master-form');
   let usageRoles={}, reviewAsset=null, usageLimit=20, draftSourceGroupId='', draftRecipeReference=null, recipeReferences=[];
-  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], dispose=null, viewId='', busy=false;
+  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], assetsTotal=0, assetsSkipped=0, dispose=null, viewId='', busy=false;
   const cancelPending=new Map();
   let masterInventory=[], categoryTree=[], categoryNodes=new Map(), categoryFilter='all', classification=null, classificationDirty=false, pendingNewCategory=null;
+  let revisionRows=[], pickedRevision=null, restoreSnapshot=null, revisionDetail=null, revisionPickToken=0, mastersLoadToken=0, revisionLoadToken=0;
   const numeric=['widthMm','depthMm','heightMm','panelMm','backMm','doorMm','gapMm','rows'];
   const labels={idle:'尚未生成',queued:'排隊中',running:'Blender 生成中',succeeded:'生成完成',failed:'生成失敗',cancelled:'已取消'};
   function notice(text,error=false){$('notice').textContent=text;$('notice').className=error?'error':'';}
@@ -75,8 +76,12 @@
         if(selected.draft.sourceGroupId){const info=await api(`/catalog/${selected.draft.sourceGroupId}/files`);group=info.group;await loadFiles();}
         renderInventory();switchView('models');await showStatus();});$(item.templateState==='PREVIEW_AVAILABLE'?'generated-masters':'masters').append(b);}
   }
-  async function loadMasters(){const data=await api();masterInventory=data.items;categoryTree=data.categoryTree;categoryNodes=new Map();indexCategories(categoryTree);
-    const generated=data.items.filter(x=>x.templateState==='PREVIEW_AVAILABLE').length;$('generated-count').textContent=generated;$('master-count').textContent=data.items.length-generated;
+  async function loadMasters(){
+    const token=++mastersLoadToken;let pageOffset=0,total=1,inv=[],tree=[];
+    while(pageOffset<total){const data=await api(`?offset=${pageOffset}&limit=200`);if(token!==mastersLoadToken)return;tree=data.categoryTree;inv=inv.concat(data.items);total=data.total;pageOffset+=data.items.length;if(!data.items.length&&pageOffset<total){notice('模型清單分頁異常，已停止載入。',true);break;}}
+    if(token!==mastersLoadToken)return;masterInventory=inv;categoryTree=tree;categoryNodes=new Map();indexCategories(categoryTree);
+    const generated=masterInventory.filter(x=>x.templateState==='PREVIEW_AVAILABLE').length;
+    $('generated-count').textContent=generated;$('master-count').textContent=masterInventory.length-generated;
     renderCategories();renderInventory();
     const old=$('model-category').value;$('model-category').innerHTML=Array.from(categoryNodes.values()).filter(n=>!n.children).map(n=>`<option value="${esc(n.id)}">${esc(n.path.join(' › '))}</option>`).join('');if(categoryNodes.has(old))$('model-category').value=old;
   }
@@ -89,7 +94,8 @@
   $('model-category').onchange=()=>{classificationDirty=true;};
   $('classification-refresh').onclick=run(showClassification);
   $('classification-form').onsubmit=run(async()=>{if(!selected||!classification)return;const mid=selected.id;const key=$('model-category').value;$('classification-form').inert=true;try{await api('/'+mid+'/classification',{method:'PUT',body:body({categoryId:key,expectedRevision:classification.revision})});pendingNewCategory=null;await showClassification();await loadMasters();notice('分類已儲存；模型尺寸、圖稿與已生成成果保持不變。');}finally{$('classification-form').inert=false;}});
-  async function loadAssets(){const data=await api('/assets');assets=data.items;usageRoles=data.roles;
+  const fetchAllPages=path=>(window.fox3dFetchAllPages||globalThis.fox3dFetchAllPages||require('./src/fox3d/static/fox3d-pagination.js').fetchAllPages)(api,path);
+  async function loadAssets(){const data=await fetchAllPages('/assets');assets=data.items||[];assetsTotal=Math.max(Number(data.total)||0,assets.length);assetsSkipped=Number(data.skipped)||0;usageRoles=data.roles||{};
     const filter=$('usage-filter').value;$('usage-filter').innerHTML='<option value="">全部用途</option>'+options(usageRoles,filter);$('usage-role').innerHTML=options(usageRoles,reviewAsset?.usage.role||'UNCLASSIFIED');
     document.querySelectorAll('.variant-art').forEach(s=>{const value=s.value;s.innerHTML=assetOptions(value);});renderUsageList();}
   function assetOptions(current=''){const allowed=assets.filter(a=>a.usage.canUseForModel);return '<option value="">尚未選印刷圖稿</option>'+
@@ -97,7 +103,8 @@
     allowed.map(a=>`<option value="${esc(a.id)}" ${a.id===current?'selected':''}>${esc(a.name)} · 已確認印刷用途</option>`).join('');}
   function renderUsageList(){const q=$('usage-query').value.toLocaleLowerCase(),role=$('usage-filter').value;
     const found=assets.filter(a=>(!role||a.usage.role===role)&&((a.name||'')+' '+(a.provenance?.relativePath||'')).toLocaleLowerCase().includes(q));
-    $('usage-count').textContent=`${found.length} 筆素材；${assets.filter(a=>a.usage.canUseForModel).length} 筆已確認印刷用途。用途由人員核對，不依副檔名自動判定。`;$('usage-list').replaceChildren();
+    const shownTotal=(!q&&!role)?Math.max(assetsTotal,found.length):found.length;
+    $('usage-count').textContent=`${shownTotal} 筆素材；${assets.filter(a=>a.usage.canUseForModel).length} 筆已確認印刷用途。${assetsSkipped>0?`有 ${assetsSkipped} 筆無法讀取。`:''}用途由人員核對，不依副檔名自動判定。`;$('usage-list').replaceChildren();
     for(const a of found.slice(0,usageLimit)){const b=document.createElement('button');b.type='button';b.innerHTML=`${esc(a.name)} <span class="usage-badge">${esc(a.usage.label)}</span><small>${esc(a.provenance?.relativePath||a.provenance?.type)} · ${esc(a.id.slice(0,12))}</small>`;b.onclick=()=>review(a.id);$('usage-list').append(b);}
     $('usage-more').hidden=found.length<=usageLimit;}
   function review(id){const a=assets.find(x=>x.id===id);if(!a)return;reviewAsset=a;$('usage-form').hidden=false;$('usage-name').textContent=a.name;$('usage-source').textContent=a.provenance?.relativePath||a.provenance?.type||'';
@@ -112,9 +119,45 @@
   function addVariant(v={}){const row=document.createElement('div');row.className='row variant';row.innerHTML=`<div class="fields"><label>SKU<input class="variant-sku" required maxlength="120" value="${esc(v.sku)}"></label><label>圖稿<select class="variant-art">${assetOptions(v.artworkAssetId)}</select></label></div><label>圖案／版本備註<input class="variant-note" maxlength="1000" value="${esc(v.note)}"></label>`;removeButton(row);$('variants').append(row);}
   function addFace(f={}){const row=document.createElement('div');row.className='row face';row.innerHTML=`<div class="fields"><label>印刷面名稱<input data-key="name" required maxlength="100" value="${esc(f.name)}" placeholder="例如 第一片門板正面"></label><label>面寬（mm）<input data-key="widthMm" type="number" min="0.01" max="6000" step="any" required value="${esc(f.widthMm)}"></label><label>面高（mm）<input data-key="heightMm" type="number" min="0.01" max="6000" step="any" required value="${esc(f.heightMm)}"></label><label>出血（mm）<input data-key="bleedMm" type="number" min="0" max="20" step="any" required value="${esc(f.bleedMm??0)}"></label></div><label>印刷面尺寸依據<input data-key="evidence" required maxlength="1500" value="${esc(f.evidence)}"></label><label>原點／治具方向紀錄<input data-key="originNote" maxlength="1500" value="${esc(f.originNote)}"></label>`;removeButton(row);$('faces').append(row);}
   function removeButton(row){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='移除此筆';b.onclick=()=>{row.remove();staleForm();};row.append(b);}
+  const masterLabels={name:'模型名稱',family:'商品大類',subtype:'細部類型',geometry:'幾何結構',widthMm:'寬度',depthMm:'深度',heightMm:'高度',panelMm:'板厚',backMm:'背板厚',doorMm:'門厚',gapMm:'門縫',rows:'層數',dimensionEvidence:'尺寸依據',structureEvidence:'結構依據',notes:'備註'};
+  function diffDraft(current,other){
+    const keys=new Set([...Object.keys(current||{}),...Object.keys(other||{})]);const lines=[];
+    for(const key of [...keys].sort()){if(key==='variants'||key==='printFaces'||key==='recipeReference'||key==='sourceGroupId')continue;const a=current?.[key],b=other?.[key];if(JSON.stringify(a)!==JSON.stringify(b))lines.push(`${masterLabels[key]||key}：${String(b??'')} → ${String(a??'')}`);}
+    const sgA=current?.sourceGroupId||'',sgB=other?.sourceGroupId||'';
+    if(sgA!==sgB)lines.push(`NAS 來源群組：${sgB||'（無）'} → ${sgA||'（無）'}`);
+    if(JSON.stringify(current?.variants||[])!==JSON.stringify(other?.variants||[]))lines.push('關聯 SKU／圖稿組合已變更');
+    if(JSON.stringify(current?.printFaces||[])!==JSON.stringify(other?.printFaces||[]))lines.push('印刷面尺寸紀錄已變更');
+    if(JSON.stringify(current?.recipeReference)!==JSON.stringify(other?.recipeReference))lines.push('Recipe 參考快照已變更');
+    return lines;
+  }
+  function renderRevisionDiff(lines){const box=$('revision-diff');box.replaceChildren();if(!lines.length){box.textContent='與目前版本相同。';return;}for(const line of lines){const p=document.createElement('p');p.textContent=line;box.append(p);}}
+  function renderRevisionButtons(mid){
+    $('revision-list').replaceChildren();
+    for(const row of revisionRows){const b=document.createElement('button');b.type='button';b.setAttribute('role','listitem');b.textContent=`第 ${row.revision} 版 · ${row.updatedAt?new Date(row.updatedAt).toLocaleString():'—'}`;
+      b.onclick=run(async()=>{const token=++revisionPickToken;pickedRevision=row.revision;$('revision-restore').disabled=true;renderRevisionDiff([]);
+        try{const detail=await api(`/${mid}/revisions/${row.revision}`);if(selected?.id!==mid||token!==revisionPickToken)return;revisionDetail=detail;renderRevisionDiff(diffDraft(selected.draft,detail.draft));$('revision-restore').disabled=row.revision===selected.revision;}
+        catch(err){if(selected?.id===mid&&token===revisionPickToken)notice(err.message,true);}});
+      $('revision-list').append(b);}
+  }
+  async function loadRevisions(){
+    const card=$('revision-history-card');const token=++revisionLoadToken;revisionRows=[];pickedRevision=null;revisionDetail=null;revisionPickToken++;
+    $('revision-restore').disabled=true;renderRevisionDiff([]);$('revision-list').replaceChildren();
+    if(!selected?.id){card.hidden=true;return;}
+    card.hidden=false;const mid=selected.id;let pageOffset=0,total=1,rows=[];
+    while(pageOffset<total){const data=await api(`/${mid}/revisions?offset=${pageOffset}&limit=40`);if(selected?.id!==mid||token!==revisionLoadToken)return;rows=rows.concat(data.items||[]);total=data.total;pageOffset+=data.items.length;if(!data.items.length&&pageOffset<total){notice('版本紀錄分頁異常，已停止載入。',true);break;}}
+    if(selected?.id!==mid||token!==revisionLoadToken)return;revisionRows=rows;renderRevisionButtons(mid);
+  }
+  function openRestoreDialog(){
+    if(!selected||!pickedRevision)return;
+    if((dirty||classificationDirty)&&!window.confirm('有未儲存的修改或分類變更，還原會覆寫編輯內容。請先儲存，或確定放棄並還原？'))return;
+    const dialog=$('restore-revision-dialog');dialog.returnValue='';restoreSnapshot={targetRevision:pickedRevision,expectedRevision:selected.revision};
+    $('restore-revision-summary').textContent=`將還原至第 ${pickedRevision} 版內容，並以目前第 ${selected.revision} 版為基礎另存新版本。`;dialog.showModal();
+  }
+  $('restore-revision-form').addEventListener('submit',async e=>{if(e.submitter?.value!=='confirm'){restoreSnapshot=null;return;}e.preventDefault();const snap=restoreSnapshot;restoreSnapshot=null;if(!snap||!selected)return;const mid=selected.id,btn=$('restore-revision-confirm'),dialog=$('restore-revision-dialog');btn.disabled=true;$('revision-history-card').inert=true;try{selected=await api(`/${mid}/revisions/${snap.targetRevision}/restore`,{method:'POST',body:body({expectedRevision:snap.expectedRevision})});dialog.close();fill(selected.draft);await loadMasters();await loadRevisions();await showStatus();notice(`已還原第 ${snap.targetRevision} 版內容並另存為第 ${selected.revision} 版。`);}catch(err){notice(err.message,true);}finally{btn.disabled=false;$('revision-history-card').inert=false;}});
+  $('revision-restore').onclick=openRestoreDialog;
   function fill(d={}){draftRecipeReference=d.recipeReference||null;draftSourceGroupId=d.sourceGroupId||'';form.reset();for(const [key,value] of Object.entries(d)){const input=form.elements.namedItem(key);if(input)input.value=value??'';}
     $('variants').replaceChildren();(d.variants||[]).forEach(addVariant);$('faces').replaceChildren();(d.printFaces||[]).forEach(addFace);
-    dirty=false;task=null;previewBinding=null;showClassification().catch(err=>notice(err.message,true));$('accept').checked=false;$('cancel').disabled=true;$('status').disabled=!selected;$('revision').textContent=selected?`第 ${selected.revision} 版`:'新模型資料';
+    dirty=false;task=null;previewBinding=null;showClassification().catch(err=>notice(err.message,true));loadRevisions().catch(err=>notice(err.message,true));$('accept').checked=false;$('cancel').disabled=true;$('status').disabled=!selected;$('revision').textContent=selected?`第 ${selected.revision} 版`:'新模型資料';
     $('render-image').hidden=true;$('downloads').replaceChildren();$('render-state').textContent='';if(dispose){dispose();dispose=null;}$('viewer').replaceChildren();viewId='';readiness();toggleCabinet();window.dispatchEvent(new CustomEvent('product-master-selected',{detail:selected}));}
   function newMaster(g=null){selected=null;const category=!g?categoryNodes.get(categoryFilter):null;pendingNewCategory=category?.draftDefaults?.family?category.id:null;$('file-query').value='';$('source-preview').hidden=true;$('sources-panel').hidden=!g;
     fill({name:g?.name||category?.draftDefaults?.family&&category.label||'',family:g?.family||category?.draftDefaults?.family||'coaster',subtype:g?.subtype||category?.draftDefaults?.subtype||'other',rows:category?.draftDefaults?.rows??null,geometry:'PENDING',sourceGroupId:g?.id||''});notice(g?'已選來源群組；請確認名稱、結構與實際尺寸，再儲存。':'請填模型資料；尺寸未知可以先留白儲存。');}

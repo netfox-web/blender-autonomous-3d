@@ -74,6 +74,7 @@ class PilotOps:
         self.qc = QcService(dam=platform.dam, workorders=self.workorders, root=platform.root / "qc")
         self.workorders.bind_qc(self.qc)
         self.logistics = LogisticsService(root=platform.root / "logistics")
+        self.workorders.logistics = self.logistics
         self.econ = PilotEconomics()
         self.receiving = ReceivingService(lots=platform.lots, root=platform.root / "receipts")
         self.reliability = ReliabilityHarness(self)
@@ -111,7 +112,7 @@ class PilotOps:
             if svc is None:
                 continue
             svc.journal = self.journal
-            # StationRegistry and ContractService gain outbox at runtime; they do not declare it.
+            # ContractService gains outbox at runtime; it does not declare it.
             setattr(svc, "outbox", self.outbox)
         self._reconcile_startup()
 
@@ -141,7 +142,21 @@ class PilotOps:
         if atype == "StationLease":
             return aid in self.dispatcher.leases
         if atype == "Station":
-            return aid in self.stations.stations
+            rec = self.stations.stations.get(str(aid)) if isinstance(aid, str) else None
+            if not rec or (tenant_id and rec.get("tenantId") != tenant_id):
+                return False
+            ev = tx.get("event") or {}
+            et = str(ev.get("event_type") or ev.get("eventType") or "")
+            if et == "station.status":
+                trans_id = payload.get("transitionId")
+                ops = rec.get("statusTransitions")
+                if not isinstance(trans_id, str) or not trans_id or not isinstance(ops, dict):
+                    return False
+                op_rec = ops.get(trans_id)
+                if not isinstance(op_rec, dict):
+                    return False
+                return op_rec.get("status") == payload.get("status") and op_rec.get("note") == payload.get("note")
+            return True
         if atype == "Operator":
             rec = self.identity.operators.get(aid) if isinstance(aid, str) else None
             event = tx.get("event") or {}
@@ -154,7 +169,16 @@ class PilotOps:
         if atype == "CycleCount":
             return aid in self.cyclecounts.counts
         if atype == "PilotException":
-            return aid in self.inbox.items
+            rec = self.inbox.items.get(str(aid)) if isinstance(aid, str) else None
+            if not rec or (tenant_id and rec.get("tenantId") != tenant_id):
+                return False
+            ev = tx.get("event") or {}
+            et = str(ev.get("event_type") or ev.get("eventType") or "")
+            if et == "exception.acknowledged":
+                return bool(rec.get("acknowledgedAt")) and rec.get("ackNote") == payload.get("note")
+            if et == "exception.resolved":
+                return rec.get("status") == "RESOLVED" and rec.get("resolution") == payload.get("resolution")
+            return True
         if atype == "Carton":
             rec = self.logistics.cartons.get(str(aid)) if isinstance(aid, str) else None
             ev = tx.get("event") or {}
@@ -209,7 +233,7 @@ class PilotOps:
             rec = self.logistics.checklists.get(str(aid)) if isinstance(aid, str) else None
             return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
         if atype == "QC":
-            rec = self.qc.checks.get(str(aid)) if isinstance(aid, str) else None
+            rec = (self.qc.checks.get(str(aid)) or self.qc.defects.get(str(aid))) if isinstance(aid, str) else None
             return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
         proto = getattr(self.platform, "prototype", None)
         ev = tx.get("event") or {}
@@ -273,6 +297,7 @@ class PilotOps:
 
     def _reconcile_startup(self) -> dict[str, Any]:
         recovered = self.outbox.reconcile(journal=self.journal, business_committed=self._business_committed)
+        self.qc.recover_pending()
         station = self.dispatcher.reconcile()
         return {"outbox": recovered, "station": station}
 
@@ -641,7 +666,10 @@ class PilotOps:
         return previews
 
     def readiness(self, *, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
-        ev = evidence or {}
+        ev = dict(evidence or {})
+        if "tenantlessCarrierQuotes" not in ev and "tenantlessQuotes" not in ev:
+            report = self.logistics.inspect_tenantless_carrier_quotes()
+            ev["tenantlessCarrierQuotes"] = int(report.get("tenantlessCount") or 0)
         matrix = scoped_readiness(evidence=ev)
 
         def _flag(key: str) -> bool:
@@ -652,11 +680,15 @@ class PilotOps:
         def _label(ready: bool, when_true: str) -> str:
             return when_true if ready else "UNVERIFIED"
 
+        tenantless_count = int(matrix.get("tenantlessCarrierQuotesCount") or 0)
+        tenantless_zero = bool(matrix.get("tenantlessCarrierQuotesReady"))
         matrix["manufacturingReleasePackageReady"] = _flag("releasePackage")
         matrix["manualPilotOpsReady"] = _flag("pilotOps")
         matrix["qcTraceabilityReady"] = _flag("qc")
         matrix["importedSupplierQuoteReady"] = _flag("supplierQuotes")
-        matrix["importedCarrierQuoteReady"] = _flag("carrierQuotes")
+        matrix["importedCarrierQuoteReady"] = _flag("carrierQuotes") and tenantless_zero
+        matrix["tenantlessCarrierQuotesCount"] = tenantless_count
+        matrix["tenantlessCarrierQuotesReady"] = tenantless_zero
         matrix["liveFactoryExecutionReady"] = False
         matrix["liveProviderReady"] = False
         matrix["globalProductionReady"] = False
@@ -669,7 +701,12 @@ class PilotOps:
             "manualPilotOpsReady": _label(matrix["manualPilotOpsReady"], "REAL"),
             "qcTraceabilityReady": _label(matrix["qcTraceabilityReady"], "REAL"),
             "importedSupplierQuoteReady": _label(matrix["importedSupplierQuoteReady"], "IMPORTED"),
-            "importedCarrierQuoteReady": _label(matrix["importedCarrierQuoteReady"], "IMPORTED"),
+            "importedCarrierQuoteReady": (
+                "BLOCKED"
+                if not tenantless_zero
+                else _label(matrix["importedCarrierQuoteReady"], "IMPORTED")
+            ),
+            "tenantlessCarrierQuotesReady": "REAL" if tenantless_zero else "BLOCKED",
             "liveFactoryExecutionReady": "BLOCKED",
             "liveProviderReady": "BLOCKED",
             "globalProductionReady": "BLOCKED",

@@ -151,10 +151,18 @@
         <section id="panel-exceptions" class="pf-panel pf-hidden" role="tabpanel" aria-labelledby="tab-exceptions" hidden>
           <h2>異常收件匣</h2>
           <p id="pf-exc-status" class="pf-muted">載入中…</p>
+          <label class="pf-filter">狀態篩選
+            <select id="pf-exc-filter">
+              <option value="">全部</option>
+              <option value="OPEN">待處理</option>
+              <option value="ACKNOWLEDGED">已確認</option>
+              <option value="RESOLVED">已結案</option>
+            </select>
+          </label>
           <div class="pf-scroll">
             <table class="pf-table" id="pf-exc-table" aria-label="異常">
               <thead>
-                <tr><th>編號</th><th>類型</th><th>訊息</th><th>時間</th></tr>
+                <tr><th>編號</th><th>類型</th><th>狀態</th><th>訊息</th><th>時間</th><th>操作</th></tr>
               </thead>
               <tbody></tbody>
             </table>

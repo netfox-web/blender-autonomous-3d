@@ -6,6 +6,8 @@ import copy
 import os
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
@@ -14,6 +16,8 @@ from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import SemanticKeyConflictError
 from fox3d.storelock import FileLock
+# Claim locks keep this object. Tests replace the FileLock name above.
+from fox3d.storelock import FileLock as _StoreFileLock
 
 PREPARED = "PREPARED"
 BUSINESS_COMMITTED = "BUSINESS_COMMITTED"
@@ -23,6 +27,35 @@ COMMITTED = "COMMITTED"
 _OUTBOX_GEN_LOCK = threading.Lock()
 _OUTBOX_STATE: dict[Path, tuple[tuple[int, int, int, int], int]] = {}
 _TX_FILE_GEN: dict[Path, int] = {}
+# (resolved outbox root, tx id) -> thread that prepared the tx inside hold().
+_HOLD_LOCK = threading.Lock()
+_HOLD_CLAIMS: dict[tuple[Path, str], int] = {}
+_hold_tls = threading.local()
+
+
+class _HoldBucket:
+    def __init__(self) -> None:
+        self.depth = 0
+        self.claims: list[_HeldClaim] = []
+
+
+class _HeldClaim:
+    def __init__(self, lock: _StoreFileLock, key: tuple[Path, str]) -> None:
+        self.lock = lock
+        self.key = key
+
+
+def _hold_buckets() -> dict[Path, _HoldBucket]:
+    buckets = getattr(_hold_tls, "buckets", None)
+    if buckets is None:
+        buckets = {}
+        _hold_tls.buckets = buckets
+    return buckets
+
+
+def _hold_depth(root: Path) -> int:
+    bucket = _hold_buckets().get(root)
+    return bucket.depth if bucket is not None else 0
 
 
 def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
@@ -66,6 +99,119 @@ class CommitOutbox:
     def _path(self, tx_id: str) -> Path:
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tx_id)
         return self.root / f"{safe}.json"
+
+    def _claim_path(self, tx_id: str) -> Path:
+        # Suffix .lock is volatile for backup; it is not a transaction record.
+        safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tx_id)
+        return self.root / f"{safe}.claim.lock"
+
+    @contextmanager
+    def hold(self) -> Iterator[None]:
+        """Own every tx prepared on this thread until the block exits.
+
+        Another instance's reconcile, abort, or complete must not delete those
+        files. The claim is a file lock so a second process sees it too, and a
+        registry so this process can tell the owner thread from a peer. The
+        lock is released when the block exits, including on crash, so a later
+        reconcile can recover a tx the owner did not finish.
+        """
+        root = self._resolved_root
+        buckets = _hold_buckets()
+        bucket = buckets.get(root)
+        if bucket is None:
+            bucket = _HoldBucket()
+            buckets[root] = bucket
+        bucket.depth += 1
+        try:
+            yield
+        finally:
+            bucket.depth -= 1
+            if bucket.depth == 0:
+                claims = list(bucket.claims)
+                bucket.claims.clear()
+                for claim in claims:
+                    self._release_held_claim(claim)
+                if buckets.get(root) is bucket and bucket.depth == 0 and not bucket.claims:
+                    buckets.pop(root, None)
+
+    def _arm_inflight(self, tx_id: str) -> None:
+        root = self._resolved_root
+        if _hold_depth(root) <= 0 or not tx_id:
+            return
+        lock = _StoreFileLock(self._claim_path(tx_id))
+        lock.acquire()
+        key = (root, tx_id)
+        with _HOLD_LOCK:
+            _HOLD_CLAIMS[key] = threading.get_ident()
+        bucket = _hold_buckets().get(root)
+        if bucket is None:
+            lock.release()
+            with _HOLD_LOCK:
+                if _HOLD_CLAIMS.get(key) == threading.get_ident():
+                    _HOLD_CLAIMS.pop(key, None)
+            return
+        bucket.claims.append(_HeldClaim(lock, key))
+
+    def _release_held_claim(self, claim: _HeldClaim) -> None:
+        with _HOLD_LOCK:
+            if _HOLD_CLAIMS.get(claim.key) == threading.get_ident():
+                _HOLD_CLAIMS.pop(claim.key, None)
+        path = claim.lock.path
+        try:
+            claim.lock.release()
+        except OSError:
+            pass
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _claim_held_elsewhere(self, tx_id: str) -> bool:
+        """True when a live owner outside this registry entry still holds the claim file."""
+        if not tx_id:
+            return False
+        path = self._claim_path(tx_id)
+        try:
+            if not path.exists():
+                return False
+        except OSError:
+            return True
+        lock = _StoreFileLock(path)
+        if not lock.try_acquire():
+            return True
+        lock.release()
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+    def _owned_by_live_peer(self, tx_id: str) -> bool:
+        """True when reconcile must leave this tx alone.
+
+        Includes a hold() on this same thread: startup reconcile of another
+        instance can run re-entrantly while the owner is between prepare and
+        mark, and must not finalize or abort that tx.
+        """
+        if not tx_id:
+            return False
+        key = (self._resolved_root, tx_id)
+        with _HOLD_LOCK:
+            if key in _HOLD_CLAIMS:
+                return True
+        return self._claim_held_elsewhere(tx_id)
+
+    def _mutation_blocked(self, tx_id: str) -> bool:
+        """True when complete/abort would steal a tx from another owner."""
+        if not tx_id:
+            return False
+        key = (self._resolved_root, tx_id)
+        me = threading.get_ident()
+        with _HOLD_LOCK:
+            owner = _HOLD_CLAIMS.get(key)
+        if owner is not None:
+            return owner != me
+        return self._claim_held_elsewhere(tx_id)
 
     def _seq_path(self) -> Path:
         return self.root / "outbox.seq.staging"
@@ -240,6 +386,9 @@ class CommitOutbox:
                 }
                 rec["txHash"] = stable_hash({k: rec[k] for k in rec if k != "txHash"})
                 path = self._path(str(rec["txId"]))
+                # Claim before the json is visible so a peer cannot observe a
+                # PREPARED file that this hold() does not yet own.
+                self._arm_inflight(str(rec["txId"]))
                 atomic_write_json(path, rec)
                 self._cache_put(path, rec, bump=True)
         return copy.deepcopy(rec)
@@ -256,15 +405,20 @@ class CommitOutbox:
                 self._cache_put(path, rec, bump=True)
                 return copy.deepcopy(rec)
 
-    def complete(self, tx_id: str) -> None:
+    def complete(self, tx_id: str) -> bool:
+        if self._mutation_blocked(tx_id):
+            return False
         with self._lock:
             with FileLock(self.root / "outbox.lock"):
                 path = self._path(tx_id)
                 self._tx_cache.pop(path, None)
                 _bump_tx_gen(path)
                 path.unlink(missing_ok=True)
+        return True
 
-    def abort(self, tx_id: str) -> bool:
+    def abort(self, tx_id: str) -> bool | None:
+        if self._mutation_blocked(tx_id):
+            return None
         with self._lock:
             with FileLock(self.root / "outbox.lock"):
                 path = self._path(tx_id)
@@ -318,6 +472,10 @@ class CommitOutbox:
         for tx in self.list_open():
             tx_id = str(tx.get("txId") or "")
             try:
+                if tx_id and self._owned_by_live_peer(tx_id):
+                    continue
+                if tx_id and not self._load_tx_file(self._path(tx_id)):
+                    continue
                 ev = dict(tx.get("event") or {})
                 tenant_id = str(ev.get("tenant_id") or tx.get("tenantId") or "")
                 semantic = tx.get("semanticKey")
@@ -334,8 +492,8 @@ class CommitOutbox:
                             semantic_key=semantic,
                         )
                         if found is not None:
-                            self.complete(tx_id)
-                            finalized += 1
+                            if self.complete(tx_id):
+                                finalized += 1
                             continue
                     else:
                         existing = [e for e in journal.list(tenant_id) if e.get("semanticKey") == semantic]
@@ -347,8 +505,8 @@ class CommitOutbox:
                                 and e.get("releaseHash") == rel_hash
                                 for e in existing
                             ):
-                                self.complete(tx_id)
-                                finalized += 1
+                                if self.complete(tx_id):
+                                    finalized += 1
                                 continue
                             raise SemanticKeyConflictError(
                                 f"semantic_key conflict for {semantic}: eventType, payloadHash, or releaseHash mismatch"
@@ -363,6 +521,8 @@ class CommitOutbox:
                         tx = latest
                 if not committed and tx.get("status") != BUSINESS_COMMITTED:
                     aborted_ok = self.abort(tx_id)
+                    if aborted_ok is None:
+                        continue
                     latest = self._load_tx_file(self._path(tx_id))
                     if aborted_ok is False or latest.get("status") in {BUSINESS_COMMITTED, COMMITTED}:
                         if latest:
@@ -389,8 +549,8 @@ class CommitOutbox:
                             semantic_key=semantic,
                             source=str(ev.get("source") or "reconcile"),
                         )
-                    self.complete(tx_id)
-                    finalized += 1
+                    if self.complete(tx_id):
+                        finalized += 1
             except Exception:
                 failed.append(tx_id)
         try:

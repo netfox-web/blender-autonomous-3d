@@ -35,6 +35,7 @@ def test_kd_page_loads_shared_shell(client: TestClient) -> None:
     assert "/admin/recipes/assets/fox3d-shell.js" in res.text
     assert "/admin/recipes/assets/fox3d-shell.css" in res.text
     assert "/admin/pages/assets/kd.js" in res.text
+    assert "/admin/pages/assets/kd-packaging.js" in res.text
     assert "/admin/pages/assets/kd.css" in res.text
     assert 'aria-label="工作台導覽"' not in res.text
 
@@ -140,13 +141,17 @@ def test_kd_js_confirms_show_and_pin_tenant() -> None:
 def test_kd_js_post_guards_and_no_innerhtml() -> None:
     js = _js()
     assert "innerHTML" not in js
+    assert "kdWriteInFlight" in js and "syncKdRefreshLock" in js
     for fn in ("wireConfirmForm", "wireStructureForm"):
         start = js.index(f"function {fn}(")
         body = js[start : js.index("\n  function ", start + 1)]
-        assert "if (!pending) return;" in body
-        assert "go.disabled = true;" in body
+        assert "inFlight" in body and "go.disabled = true;" in body
+        assert "activePost" in body and "if (activePost) return;" in body
+        assert "cancel.disabled = true;" in body
+        assert "if (activePost !== seq) return;" in body
+        assert "if (!pending" in body
         assert ".catch(function (e)" in body
-        assert "go.disabled = false;" in body
+        assert "trackKdWriteStart" in body and "trackKdWriteEnd" in body
 
 
 def test_kd_js_readiness_fields_match_api(client: TestClient) -> None:

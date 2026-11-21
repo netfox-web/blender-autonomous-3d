@@ -78,6 +78,8 @@ class FurnitureFactory:
             return {}
 
     def _snapshot_payload(self) -> dict[str, Any]:
+        # Other platform services can add products without the factory lock.
+        parametrics = getattr(self.platform, "parametrics", {}).copy()
         return {
             "spaces": {sid: twin.model_dump(mode="json") for sid, twin in self.spaces.items()},
             "assemblies": dict(self.assemblies),
@@ -86,7 +88,7 @@ class FurnitureFactory:
             "revisions": list(self.revisions),
             "quoteRunIndex": dict(self._quote_run_index),
             "parametrics": {
-                str(k): v for k, v in getattr(self.platform, "parametrics", {}).items() if isinstance(v, dict)
+                str(k): v for k, v in parametrics.items() if isinstance(v, dict)
             },
         }
 
@@ -425,16 +427,17 @@ class FurnitureFactory:
         bom_engine = BOMEngine()
         merged_lines: list[dict[str, Any]] = []
         cabinet_records: list[dict[str, Any]] = []
+        pending_parametrics: dict[str, dict[str, Any]] = {}
         for placed in assembly.cabinets:
             spec = CabinetSpec.model_validate(placed.spec)
-            rec = self.platform.parametrics.get(spec.productId)
+            rec = pending_parametrics.get(spec.productId) or self.platform.parametrics.get(spec.productId)
             if not rec:
                 rec = {
                     "spec": spec.model_dump(mode="json"),
                     "bom": bom_engine.build(spec),
                     "engineeringHash": spec.engineering_hash(),
                 }
-                self.platform.parametrics[spec.productId] = rec
+                pending_parametrics[spec.productId] = rec
             bom = rec["bom"]
             for line in bom["lines"]:
                 item = dict(line)
@@ -535,6 +538,8 @@ class FurnitureFactory:
             "productTypes": self.types.list(),
         }
         with self._transaction():
+            for product_id, record in pending_parametrics.items():
+                self.platform.parametrics.setdefault(product_id, record)
             self.quotes[quote.quoteId] = quote_dump
             self.assemblies[assembly.assemblyId] = run["assembly"]
             self.runs[run["runId"]] = run

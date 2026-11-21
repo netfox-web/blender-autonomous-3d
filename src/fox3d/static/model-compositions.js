@@ -32,9 +32,10 @@
     }
     $('composition-accept').checked=false;
   }
+  const fetchAllPages=path=>(window.fox3dFetchAllPages||globalThis.fox3dFetchAllPages||require('./src/fox3d/static/fox3d-pagination.js').fetchAllPages)(api,path);
   async function load(reset=false){if(!master)return;const token=epoch,id=master.id;
     const s=await api('/'+id+'/composition');if(token!==epoch||master.id!==id)return;
-    if(reset){const a=await api('/assets');if(token!==epoch)return;assets=a.items;fields(s);dirty=false;}
+    if(reset){const a=await fetchAllPages('/assets');if(token!==epoch)return;assets=a.items||[];fields(s);dirty=false;}
     task=['queued','running'].includes(s.state)?s.taskId:null;buttons();
     if(!dirty)message(s.error|| (s.stale?'母版已修改，需重新生成。':task?'Blender 正在生成套圖／情境預覽…':s.generated?'套圖／情境預覽完成。':'尚未生成套圖；可先不選圖稿查看母版場景。'));
     if(s.generated&&!s.stale&&!dirty&&!masterDirty){const url=name=>`${base}/${encodeURIComponent(id)}/composition/files/${encodeURIComponent(name)}?`+new URLSearchParams({workspace:tenant,generation:s.generationId});

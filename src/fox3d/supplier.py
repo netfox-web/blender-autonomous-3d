@@ -225,10 +225,17 @@ class SupplierQuoteService:
         prepared = [(row, csv.writer.__doc__ and ",".join(row.values()) or str(row)) for row in rows]
         return self._import_batch(prepared, source=source)
 
-    def import_fx(self, row: dict[str, Any], *, source: str) -> dict[str, Any]:
+    def import_fx(self, row: dict[str, Any], *, source: str, tenant_id: str | None = None) -> dict[str, Any]:
         if source not in ALLOWED_SOURCES:
             raise PermissionError("FX remains MANUAL/IMPORTED unless a live FxRateProvider is connected")
-        return self.providers.import_rows(self.providers.fx, [row], source=source)[0]
+        rec = dict(row)
+        # The owner comes from the caller's verified tenant, never from the row itself.
+        rec.pop("tenantId", None)
+        if tenant_id is not None:
+            if not isinstance(tenant_id, str) or not tenant_id:
+                raise ValueError("invalid_tenant")
+            rec["tenantId"] = tenant_id
+        return self.providers.import_rows(self.providers.fx, [rec], source=source)[0]
 
     def normalize(self, quote: dict[str, Any]) -> dict[str, Any]:
         raw = quote.get("raw") or quote
@@ -267,7 +274,10 @@ class SupplierQuoteService:
         quantity: int,
         fx_snapshot_id: str | None = None,
         weights: dict[str, float] | None = None,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
+        if tenant_id is not None and (not isinstance(tenant_id, str) or not tenant_id):
+            raise ValueError("invalid_tenant")
         selected = [(qid, self.quotes[qid]) for qid in quote_ids]
         # Record fx_snapshot_id only. Do not convert; mixed currencies are refused.
         if len({_currency_code(q) for _, q in selected}) > 1:
@@ -308,7 +318,9 @@ class SupplierQuoteService:
         rows.sort(key=lambda r: (r["score"], r["landed"], r["leadTimeDays"]))
         fx = None
         if fx_snapshot_id:
-            fx = next((row for row in self.providers.fx.active() if row["snapshotId"] == fx_snapshot_id), None)
+            # Look up by verified tenant and ID. Without a tenant only unscoped rows match;
+            # quarantined pre-upgrade rows never match.
+            fx = self.providers.fx.get(fx_snapshot_id, tenant_id=tenant_id)
             if fx and fx.get("source") == "LIVE_PROVIDER" and not self.providers.live.get("FxRateProvider"):
                 raise PermissionError("static FX fixture cannot be labelled LIVE_PROVIDER")
         cmp: dict[str, Any] = {

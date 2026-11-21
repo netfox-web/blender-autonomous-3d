@@ -2064,7 +2064,12 @@ class PilotBatchFactory:
         return batch
 
     def readiness(self, batch_id: str, *, tenant_id: str) -> dict[str, Any]:
-        batch = self.refresh_stale(batch_id, tenant_id=tenant_id)
+        self.refresh_stale(batch_id, tenant_id=tenant_id)
+        return self.readiness_readonly(batch_id, tenant_id=tenant_id)
+
+    def readiness_readonly(self, batch_id: str, *, tenant_id: str) -> dict[str, Any]:
+        batch = dict(self.get(batch_id, tenant_id=tenant_id))
+        batch["staleLineage"] = bool(batch.get("staleLineage") or self.platform.prototype._lineage_stale(batch["candidateId"], tenant_id))
         units = self.units_for(batch_id, tenant_id=tenant_id)
         cost = self.costs.get(batch.get("costId") or "")
         labor = self._labor_integrity(batch)
@@ -2119,7 +2124,7 @@ class PilotBatchFactory:
         elif not fixture and not blockers:
             decision = "READY_FOR_HUMAN_BATCH_GO_NO_GO"
         existing = next((d for d in self.decisions.values() if d.get("batchId") == batch_id), None)
-        if existing and existing.get("decision") in {"HUMAN_BATCH_GO", "HUMAN_BATCH_NO_GO"}:
+        if existing and not holds and lineage_ok and existing.get("decision") in {"HUMAN_BATCH_GO", "HUMAN_BATCH_NO_GO"}:
             decision = existing["decision"]
         return {
             "batchId": batch_id,

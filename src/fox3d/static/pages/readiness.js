@@ -189,10 +189,78 @@
     }).catch(function (e) { st.textContent = '載入失敗：' + e; });
   }
 
+  function loadPhysicalEntities() {
+    var sel = $('rd-phys-entity-select');
+    var inp = $('rd-phys-entity');
+    var hint = $('rd-phys-entity-hint');
+    if (!sel) return;
+    var curTenant = tenant();
+    Promise.all([
+      api('GET', '/api/packaging/structures', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+      api('GET', '/api/acrylic/products', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+      api('GET', '/api/retail/fixtures', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+      api('GET', '/api/kd/candidates', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+    ]).then(function (res) {
+      if (tenant() !== curTenant || postBusy || activeConfirm) return;
+      var entries = [];
+      var pkgItems = (res[0] && res[0].ok && res[0].data && res[0].data.items) || [];
+      pkgItems.forEach(function (it) {
+        var id = it && it.packageId;
+        if (id) entries.push({ id: String(id), kind: 'packaging', label: '[包裝] ' + id + ' (' + (it.family || it.template || 'PKG') + ')' });
+      });
+      var acrItems = (res[1] && res[1].ok && res[1].data && res[1].data.items) || [];
+      acrItems.forEach(function (it) {
+        var id = it && it.productId;
+        if (id) entries.push({ id: String(id), kind: 'acrylic', label: '[壓克力] ' + id + ' (' + (it.kind || 'ACRYLIC') + ')' });
+      });
+      var retItems = (res[2] && res[2].ok && res[2].data && res[2].data.items) || [];
+      retItems.forEach(function (it) {
+        var id = it && it.fixtureId;
+        if (id) entries.push({ id: String(id), kind: 'retail', label: '[陳列架] ' + id + ' (' + (it.family || 'RETAIL') + ')' });
+      });
+      var kdItems = (res[3] && res[3].ok && res[3].data && res[3].data.items) || [];
+      kdItems.forEach(function (it) {
+        var spec = (it && it.spec) || {};
+        var id = (it && it.productId) || spec.productId || (it && it.candidateId);
+        var kind = spec.kind || (it && it.kind) || 'KD';
+        if (id) entries.push({ id: String(id), kind: 'kd', label: '[KD] ' + id + ' (' + kind + ')' });
+      });
+      var prevVal = inp ? inp.value.trim() : '';
+      sel.textContent = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = entries.length
+        ? '— 請選擇已建立之商品／實體（共 ' + entries.length + ' 筆）—'
+        : '— 此租戶尚無已建立商品（請先建立或手動輸入 ID）—';
+      sel.appendChild(placeholder);
+      var matched = false;
+      entries.forEach(function (row) {
+        var opt = document.createElement('option');
+        opt.value = row.id;
+        opt.setAttribute('data-kind', row.kind);
+        opt.textContent = row.label;
+        if (prevVal && row.id === prevVal) matched = true;
+        sel.appendChild(opt);
+      });
+      if (matched) {
+        sel.value = prevVal;
+      } else if (inp && inp.getAttribute('data-from-select') === '1') {
+        inp.value = '';
+        inp.removeAttribute('data-from-select');
+      }
+      if (hint) {
+        hint.textContent = entries.length
+          ? '已載入此租戶 ' + entries.length + ' 筆商品，可由下拉選單選擇或直接輸入實體 ID。'
+          : '目前租戶尚無已建立商品；請先至對應工作台建立包裝／壓克力／陳列架／KD 商品，或輸入有效實體 ID。';
+      }
+    });
+  }
+
   function loadPhysical() {
     var st = $('rd-phys-status');
     var fam = $('rd-families-table');
     var ready = $('rd-phys-ready-table');
+    loadPhysicalEntities();
     if (!st) return;
     st.textContent = '載入中…';
     if (fam) { fam.hidden = true; fam.textContent = ''; }
@@ -428,6 +496,190 @@
     }
   }
 
+  var historyOffset = 0;
+  var historyLimit = 20;
+  var historyGen = 0;
+  var snapOffset = 0;
+  var snapLimit = 20;
+  var snapGen = 0;
+
+  function qs(params) {
+    var parts = [];
+    Object.keys(params).forEach(function (key) {
+      var value = params[key];
+      if (value === undefined || value === null || value === '') return;
+      parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(String(value)));
+    });
+    return parts.length ? ('?' + parts.join('&')) : '';
+  }
+
+  function releaseVerdict(item) {
+    var decision = item && item.decision != null ? String(item.decision) : '';
+    var state = item && item.state != null ? String(item.state) : '';
+    var stale = !!(item && (item.stale === true || decision === 'STALE' || state === 'STALE'));
+    var blocked = !!(item && (item.blocked === true || decision === 'BLOCKED' || state === 'BLOCKED'));
+    if (stale) return { text: '已過期', cls: 'no', code: 'stale' };
+    if (blocked) return { text: '已封鎖', cls: 'lbl-BLOCKED', code: 'blocked' };
+    var approved = decision === 'APPROVED_FOR_EXPORT' || state === 'APPROVED_FOR_EXPORT';
+    if (approved && item && item.released === false) return { text: '未放行', cls: 'no', code: 'open' };
+    if (approved) return { text: '已放行', cls: 'yes', code: 'released' };
+    return { text: state || decision || '未放行', cls: 'no', code: 'open' };
+  }
+
+  function cellText(tr, text) {
+    var td = document.createElement('td');
+    td.textContent = text == null || text === '' ? '—' : String(text);
+    tr.appendChild(td);
+  }
+
+  function cellVerdict(tr, item) {
+    var td = document.createElement('td');
+    var verdict = releaseVerdict(item);
+    var tag = document.createElement('span');
+    tag.className = 'rd-tag rd-verdict ' + verdict.cls;
+    tag.setAttribute('data-verdict', verdict.code);
+    tag.textContent = verdict.text;
+    td.appendChild(tag);
+    tr.appendChild(td);
+  }
+
+  function fillTable(wrap, headers, records, fillRow) {
+    if (!wrap) return;
+    wrap.textContent = '';
+    if (!records.length) {
+      wrap.hidden = true;
+      return;
+    }
+    var table = document.createElement('table');
+    table.className = 'rd-table';
+    var thead = document.createElement('thead');
+    var hr = document.createElement('tr');
+    headers.forEach(function (label) {
+      var th = document.createElement('th');
+      th.textContent = label;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    var tb = document.createElement('tbody');
+    records.forEach(function (rec) {
+      var tr = document.createElement('tr');
+      fillRow(tr, rec);
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    wrap.appendChild(table);
+    wrap.hidden = false;
+  }
+
+  function pageStatus(total, offset, count, emptyText) {
+    if (!total) return emptyText;
+    if (!count) return '共 ' + total + ' 筆，本頁沒有資料';
+    return '共 ' + total + ' 筆，本頁 ' + (offset + 1) + '–' + (offset + count);
+  }
+
+  function setPager(prevId, nextId, offset, hasMore) {
+    var prev = $(prevId);
+    var next = $(nextId);
+    if (prev) prev.disabled = offset <= 0;
+    if (next) next.disabled = !hasMore;
+  }
+
+  function loadHistory() {
+    var st = $('rd-history-status');
+    var apSt = $('rd-approvals-status');
+    if (!st && !apSt) return;
+    var gen = ++historyGen;
+    var pinned = tenant();
+    var entityId = ($('rd-history-entity') && $('rd-history-entity').value.trim()) || '';
+    fillTable($('rd-history-table'), [], [], function () {});
+    fillTable($('rd-approvals-table'), [], [], function () {});
+    if (st) st.textContent = '載入中…';
+    if (apSt) apSt.textContent = '載入中…';
+    setPager('rd-history-prev', 'rd-history-next', historyOffset, false);
+    var eventsPath = '/api/release/events' + qs({
+      entityId: entityId, limit: historyLimit, offset: historyOffset,
+    });
+    Promise.all([
+      api('GET', eventsPath, undefined, pinned),
+      api('GET', '/api/release/approvals', undefined, pinned),
+    ]).then(function (pair) {
+      if (gen !== historyGen) return;
+      var events = pair[0];
+      var approvals = pair[1];
+      if (!events || !events.ok) {
+        if (st) st.textContent = '載入失敗（HTTP ' + ((events && events.status) || 0) + '）';
+        fillTable($('rd-history-table'), [], [], function () {});
+      } else {
+        var rows = (events.data && events.data.items) || [];
+        if (st) st.textContent = pageStatus(events.data.total || 0, events.data.offset || 0, rows.length, '此租戶尚無放行事件');
+        fillTable($('rd-history-table'), ['實體 ID', '決策', '判定', '時間', '操作者'], rows, function (tr, rec) {
+          cellText(tr, rec.entityId);
+          cellText(tr, rec.decision || rec.state);
+          cellVerdict(tr, rec);
+          cellText(tr, rec.approvedAt);
+          cellText(tr, rec.actor);
+        });
+        setPager('rd-history-prev', 'rd-history-next', events.data.offset || 0, !!events.data.hasMore);
+      }
+      if (!approvals || !approvals.ok) {
+        if (apSt) apSt.textContent = '載入失敗（HTTP ' + ((approvals && approvals.status) || 0) + '）';
+        fillTable($('rd-approvals-table'), [], [], function () {});
+        return;
+      }
+      var approvalRows = (approvals.data && approvals.data.items) || [];
+      if (apSt) apSt.textContent = approvalRows.length ? ('共 ' + approvalRows.length + ' 筆核准') : '此租戶尚無核准紀錄';
+      fillTable($('rd-approvals-table'), ['實體 ID', '狀態', '判定', '時間', '操作者'], approvalRows, function (tr, rec) {
+        cellText(tr, rec.entityId);
+        cellText(tr, rec.state || rec.decision);
+        cellVerdict(tr, rec);
+        cellText(tr, rec.approvedAt);
+        cellText(tr, rec.actor);
+      });
+    }).catch(function (e) {
+      if (gen !== historyGen) return;
+      fillTable($('rd-history-table'), [], [], function () {});
+      fillTable($('rd-approvals-table'), [], [], function () {});
+      if (st) st.textContent = '載入失敗：' + ((e && e.message) || e);
+      if (apSt) apSt.textContent = '載入失敗：' + ((e && e.message) || e);
+    });
+  }
+
+  function loadSnapshots() {
+    var st = $('rd-snap-status');
+    if (!st) return;
+    var gen = ++snapGen;
+    var pinned = tenant();
+    var at = ($('rd-snap-at') && $('rd-snap-at').value.trim()) || '';
+    fillTable($('rd-snap-table'), [], [], function () {});
+    st.textContent = '載入中…';
+    setPager('rd-snap-prev', 'rd-snap-next', snapOffset, false);
+    var path = '/api/commerce/snapshots' + qs({ at: at, limit: snapLimit, offset: snapOffset });
+    api('GET', path, undefined, pinned).then(function (r) {
+      if (gen !== snapGen) return;
+      if (!r || !r.ok) {
+        st.textContent = '載入失敗（HTTP ' + ((r && r.status) || 0) + '）';
+        fillTable($('rd-snap-table'), [], [], function () {});
+        return;
+      }
+      var rows = (r.data && r.data.items) || [];
+      st.textContent = pageStatus(r.data.total || 0, r.data.offset || 0, rows.length, '此租戶目前沒有有效快照');
+      fillTable($('rd-snap-table'), ['種類', '快照 ID', '來源', '生效', '到期', '匯入時間'], rows, function (tr, rec) {
+        cellText(tr, rec.kind);
+        cellText(tr, rec.snapshotId);
+        cellText(tr, rec.source);
+        cellText(tr, rec.effectiveAt);
+        cellText(tr, rec.expiresAt);
+        cellText(tr, rec.importedAt);
+      });
+      setPager('rd-snap-prev', 'rd-snap-next', r.data.offset || 0, !!r.data.hasMore);
+    }).catch(function (e) {
+      if (gen !== snapGen) return;
+      fillTable($('rd-snap-table'), [], [], function () {});
+      st.textContent = '載入失敗：' + ((e && e.message) || e);
+    });
+  }
+
   function focusHash() {
     var id = '';
     try { id = decodeURIComponent(location.hash.slice(1)); } catch (e) { return; }
@@ -447,6 +699,10 @@
         loadOverview();
         loadKpi();
         loadPhysical();
+        historyOffset = 0;
+        snapOffset = 0;
+        loadHistory();
+        loadSnapshots();
       });
     }
     var reloadBtn = $('rd-reload-overview');
@@ -455,6 +711,53 @@
     loadOverview();
     loadKpi();
     loadPhysical();
+    loadHistory();
+    loadSnapshots();
+
+    var historyReload = $('rd-history-reload');
+    if (historyReload) historyReload.addEventListener('click', function () {
+      historyOffset = 0;
+      loadHistory();
+    });
+    var historyPrev = $('rd-history-prev');
+    if (historyPrev) historyPrev.addEventListener('click', function () {
+      if (historyPrev.disabled) return;
+      historyOffset = Math.max(0, historyOffset - historyLimit);
+      loadHistory();
+    });
+    var historyNext = $('rd-history-next');
+    if (historyNext) historyNext.addEventListener('click', function () {
+      if (historyNext.disabled) return;
+      historyOffset += historyLimit;
+      loadHistory();
+    });
+    var historyEntity = $('rd-history-entity');
+    if (historyEntity) historyEntity.addEventListener('change', function () {
+      historyOffset = 0;
+      loadHistory();
+    });
+    var snapReload = $('rd-snap-reload');
+    if (snapReload) snapReload.addEventListener('click', function () {
+      snapOffset = 0;
+      loadSnapshots();
+    });
+    var snapPrev = $('rd-snap-prev');
+    if (snapPrev) snapPrev.addEventListener('click', function () {
+      if (snapPrev.disabled) return;
+      snapOffset = Math.max(0, snapOffset - snapLimit);
+      loadSnapshots();
+    });
+    var snapNext = $('rd-snap-next');
+    if (snapNext) snapNext.addEventListener('click', function () {
+      if (snapNext.disabled) return;
+      snapOffset += snapLimit;
+      loadSnapshots();
+    });
+    var snapAt = $('rd-snap-at');
+    if (snapAt) snapAt.addEventListener('change', function () {
+      snapOffset = 0;
+      loadSnapshots();
+    });
 
     bindPost({
       run: 'rd-evidence-run', box: 'rd-evidence-confirm', ok: 'rd-evidence-ok', cancel: 'rd-evidence-cancel',
@@ -482,6 +785,7 @@
           evidenceOk: !!raw['rd-rel-evidence'],
         };
       },
+      after: function () { historyOffset = 0; loadHistory(); },
     });
 
     bindPost({
@@ -494,17 +798,47 @@
       build: function (raw) { return { kind: raw['rd-safe-kind'], record: parseJson(raw['rd-safe-json'], '紀錄') }; },
     });
 
+    var physSelect = $('rd-phys-entity-select');
+    var physInput = $('rd-phys-entity');
+    var physKind = $('rd-phys-kind');
+    if (physSelect && physInput) {
+      physSelect.addEventListener('change', function () {
+        if (postBusy || activeConfirm) return;
+        var val = physSelect.value;
+        if (val) {
+          physInput.value = val;
+          physInput.setAttribute('data-from-select', '1');
+          var selectedOpt = physSelect.options[physSelect.selectedIndex];
+          var optKind = selectedOpt && selectedOpt.getAttribute('data-kind');
+          if (optKind && physKind) physKind.value = optKind;
+        }
+      });
+      physInput.addEventListener('input', function () {
+        if (postBusy || activeConfirm) return;
+        physInput.removeAttribute('data-from-select');
+        var trimmed = physInput.value.trim();
+        var hasMatch = false;
+        for (var i = 0; i < physSelect.options.length; i++) {
+          if (physSelect.options[i].value === trimmed) {
+            hasMatch = true;
+            break;
+          }
+        }
+        physSelect.value = hasMatch ? trimmed : '';
+      });
+    }
+
     bindPost({
       run: 'rd-phys-approve-run', box: 'rd-phys-confirm', ok: 'rd-phys-approve-ok', cancel: 'rd-phys-approve-cancel',
       out: 'rd-phys-out', snap: 'rd-phys-snap', text: 'rd-phys-text', label: '核准申請',
-      path: '/api/physical-os/approve', fields: ['rd-phys-entity', 'rd-phys-kind'],
+      path: '/api/physical-os/approve', fields: ['rd-phys-entity-select', 'rd-phys-entity', 'rd-phys-kind'],
       summary: function (body, raw) {
         return '確定送出核准申請（' + body.entityId + ' / ' + body.kind + '，租戶 ' + raw.tenant + '）？狀態為 WAITING_APPROVAL，不會啟動現場機台。';
       },
       build: function (raw) {
         return {
-          entityId: String(raw['rd-phys-entity'] || '').trim(),
-          kind: String(raw['rd-phys-kind'] || '').trim(),
+          entityId: String(raw['rd-phys-entity'] || raw['rd-phys-entity-select'] || '').trim(),
+          kind: String(raw['rd-phys-kind'] || '').trim() || 'product',
           actor: 'readiness-page',
         };
       },
@@ -525,7 +859,7 @@
         }
         return { kind: raw['rd-com-kind'], source: raw['rd-com-source'], rows: rows };
       },
-      after: loadKpi,
+      after: function () { snapOffset = 0; loadKpi(); loadSnapshots(); },
     });
 
     window.addEventListener('hashchange', focusHash);

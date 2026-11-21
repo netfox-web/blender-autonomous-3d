@@ -252,3 +252,30 @@ body {
 #structures {
   scroll-margin-top: 12px;
 }
+.kdp-panel {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line, #2a3140);
+}
+.kdp-sub {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.kdp-form label.kdp-wide {
+  flex: 1 1 100%;
+}
+.kdp-form textarea {
+  width: 100%;
+  min-height: 6rem;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.kdp-issues {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+  color: var(--warn, #c9a227);
+}
+.kdp-fail {
+  color: var(--warn, #c9a227);
+}

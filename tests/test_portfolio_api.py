@@ -1,0 +1,352 @@
+"""Portfolio HTTP API — tenant scope, ranking, approval idempotency."""
+
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+from fastapi.testclient import TestClient
+
+from fox3d.api import create_app
+from fox3d.platform import Platform
+from fox3d.portfolio import DEFAULT_RANKING_POLICY, run_portfolio_scenario
+
+TENANT_A = "pf-api-a"
+TENANT_B = "pf-api-b"
+CONFIRM = {"confirm": True, "actor": "pm", "reason": "approve-once"}
+
+
+@pytest.fixture()
+def client(platform):  # noqa: ANN001
+    return TestClient(create_app(platform))
+
+
+def _h(tenant: str = TENANT_A) -> dict[str, str]:
+    return {"X-Tenant-Id": tenant}
+
+
+def _flow(client: TestClient) -> dict:
+    intent = client.post("/api/portfolio/intents", headers=_h(), json={"segment": "STUDENT", "demandSource": "MOCK"}).json()
+    pid = intent["portfolioId"]
+    gen = client.post(f"/api/portfolio/intents/{pid}/candidates", headers=_h()).json()
+    assert gen["count"] >= 1
+    plan = client.post(f"/api/portfolio/intents/{pid}/material-plan", headers=_h(), json={}).json()
+    assert plan["planId"]
+    ranking = client.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(), json={}).json()
+    assert ranking["demandReal"] is False
+    assert ranking.get("demandEstimateLabel") == "需求為估計值"
+    top = ranking["top10"][0]["candidateId"]
+    return {
+        "portfolioId": pid,
+        "rankingId": ranking["rankingId"],
+        "topCandidateId": top,
+        "ranking": ranking,
+        "plan": plan,
+    }
+
+
+def test_portfolio_api_full_flow_and_persistence(client: TestClient, platform) -> None:
+    data = _flow(client)
+    listing = client.get("/api/portfolio/intents", headers=_h()).json()
+    assert listing["total"] >= 1
+    one = client.get(f"/api/portfolio/intents/{data['portfolioId']}", headers=_h()).json()
+    assert one["portfolioId"] == data["portfolioId"]
+    cands = client.get(f"/api/portfolio/intents/{data['portfolioId']}/candidates", headers=_h()).json()
+    assert cands["total"] >= 10
+    assert client.get(f"/api/portfolio/candidates/{data['topCandidateId']}/media-pack", headers=_h()).status_code == 200
+    path = platform.portfolio.root / "portfolio.json"
+    before, mtime = path.read_bytes(), path.stat().st_mtime_ns
+    assert client.get(f"/api/portfolio/intents/{data['portfolioId']}", headers=_h()).status_code == 200
+    assert path.read_bytes() == before and path.stat().st_mtime_ns == mtime
+
+    submit = client.post(
+        f"/api/portfolio/candidates/{data['topCandidateId']}/submit-approval",
+        headers=_h(),
+        json={"actor": "pm"},
+    )
+    assert submit.status_code == 200
+    approval_id = submit.json()["approvalId"]
+    first = client.post(f"/api/portfolio/approvals/{approval_id}/approve", headers=_h(), json=CONFIRM)
+    second = client.post(f"/api/portfolio/approvals/{approval_id}/approve", headers=_h(), json=CONFIRM)
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json().get("approvedAt") == second.json().get("approvedAt")
+
+    pack = client.get(f"/api/portfolio/candidates/{data['topCandidateId']}/prototype-pack", headers=_h())
+    assert pack.status_code == 200
+    assert pack.json().get("readyForManualPrototype") is True
+
+    reloaded = Platform(root=platform.root, mock_blender=True)
+    c2 = TestClient(create_app(reloaded))
+    assert c2.get(f"/api/portfolio/intents/{data['portfolioId']}", headers=_h()).json()["portfolioId"] == data["portfolioId"]
+
+
+def test_cross_tenant_is_404_without_leak(client: TestClient) -> None:
+    data = _flow(client)
+    for suffix in (
+        "",
+        f"/{data['portfolioId']}",
+        f"/{data['portfolioId']}/candidates",
+        f"/{data['portfolioId']}/material-plan",
+        f"/{data['portfolioId']}/rankings",
+    ):
+        method = "post" if suffix.endswith(("candidates", "material-plan", "rankings")) else "get"
+        url = "/api/portfolio/intents" + suffix
+        if method == "post":
+            res = client.post(url, headers=_h(TENANT_B), json={})
+        else:
+            res = client.get(url if suffix else "/api/portfolio/intents", headers=_h(TENANT_B))
+        if not suffix:
+            assert res.status_code == 200
+            assert res.json()["total"] == 0
+            continue
+        assert res.status_code in {404, 405}
+        assert "KeyError" not in res.text
+        assert "tenant isolation" not in res.text
+    for path in (
+        f"/api/portfolio/rankings/{data['rankingId']}/override",
+        f"/api/portfolio/candidates/{data['topCandidateId']}/submit-approval",
+        f"/api/portfolio/approvals/x/submit",
+        f"/api/portfolio/candidates/{data['topCandidateId']}/supersede",
+        f"/api/portfolio/candidates/{data['topCandidateId']}/prototype-pack",
+    ):
+        res = client.post(path, headers=_h(TENANT_B), json={"actor": "x", "reason": "x", "candidateId": data["topCandidateId"]})
+        if res.status_code == 405:
+            res = client.get(path, headers=_h(TENANT_B))
+        assert res.status_code in {400, 403, 404, 422}
+        assert "KeyError" not in res.text
+
+
+@pytest.mark.parametrize(
+    "candidate_count",
+    ["abc", [], {}, True, 0, 101, 1.5],
+)
+def test_create_intent_candidate_count_malformed_is_422(client: TestClient, candidate_count) -> None:
+    res = client.post(
+        "/api/portfolio/intents",
+        headers=_h(),
+        json={"segment": "STUDENT", "demandSource": "MOCK", "candidateCount": candidate_count},
+    )
+    assert res.status_code == 422
+    assert "candidateCount" in res.json()["detail"]
+
+
+def test_ranking_top10_includes_landed_cost(client: TestClient) -> None:
+    data = _flow(client)
+    row = data["ranking"]["top10"][0]
+    assert "landedCost" in row
+    assert isinstance(row["landedCost"], (int, float))
+
+
+def test_override_promotes_candidate_and_persists(client: TestClient, platform) -> None:
+    data = _flow(client)
+    top = data["ranking"]["top10"]
+    assert len(top) >= 2
+    first_id = top[0]["candidateId"]
+    second_id = top[1]["candidateId"]
+    assert first_id != second_id
+    res = client.post(
+        f"/api/portfolio/rankings/{data['rankingId']}/override",
+        headers=_h(),
+        json={"actor": "planner", "reason": "promote-second", "candidateId": second_id},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["top10"][0]["candidateId"] == second_id
+    override = body["humanOverrides"][-1]
+    assert override["rewritesScore"] is True
+    reloaded = Platform(root=platform.root, mock_blender=True)
+    stored = reloaded.portfolio.rankings[data["rankingId"]]
+    assert stored["top10"][0]["candidateId"] == second_id
+
+
+def test_override_missing_reason_is_422(client: TestClient) -> None:
+    data = _flow(client)
+    res = client.post(
+        f"/api/portfolio/rankings/{data['rankingId']}/override",
+        headers=_h(),
+        json={"actor": "planner", "candidateId": data["topCandidateId"]},
+    )
+    assert res.status_code == 422
+    assert res.json()["detail"] == "reason 必填"
+
+
+def test_approve_requires_confirm_token(client: TestClient) -> None:
+    data = _flow(client)
+    submit = client.post(
+        f"/api/portfolio/candidates/{data['topCandidateId']}/submit-approval",
+        headers=_h(),
+        json={"actor": "pm"},
+    ).json()
+    res = client.post(
+        f"/api/portfolio/approvals/{submit['approvalId']}/approve",
+        headers=_h(),
+        json={"actor": "pm", "reason": "no-token"},
+    )
+    assert res.status_code == 403
+
+
+def test_concurrent_approve_applies_once(client: TestClient) -> None:
+    data = _flow(client)
+    submit = client.post(
+        f"/api/portfolio/candidates/{data['topCandidateId']}/submit-approval",
+        headers=_h(),
+        json={"actor": "pm"},
+    ).json()
+    aid = submit["approvalId"]
+
+    def once() -> dict:
+        return client.post(f"/api/portfolio/approvals/{aid}/approve", headers=_h(), json=CONFIRM).json()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        a, b = list(pool.map(lambda _: once(), range(2)))
+    assert a.get("approvedAt") == b.get("approvedAt")
+    assert a.get("status") == "APPROVED_FOR_PROTOTYPE"
+
+
+def test_stale_cost_hint_in_ranking(client: TestClient, platform) -> None:
+    data = _flow(client)
+    cid = data["topCandidateId"]
+    rec = platform.portfolio.candidates[cid]
+    rec["commercial"]["engineeringHash"] = "stale-hash"
+    rec["commercial"]["stale"] = True
+    platform.portfolio.persist()
+    ranking = client.post(
+        f"/api/portfolio/intents/{data['portfolioId']}/rankings",
+        headers=_h(),
+        json={},
+    ).json()
+    assert cid in (ranking.get("staleCostHints") or [])
+    pack = client.get(f"/api/portfolio/candidates/{cid}/prototype-pack", headers=_h())
+    assert pack.status_code == 400
+    assert "KeyError" not in pack.text
+
+
+def test_supersede_blocks_prototype_pack(client: TestClient) -> None:
+    data = _flow(client)
+    cid = data["topCandidateId"]
+    assert client.post(f"/api/portfolio/candidates/{cid}/supersede", headers=_h()).status_code == 200
+    res = client.get(f"/api/portfolio/candidates/{cid}/prototype-pack", headers=_h())
+    assert res.status_code == 400
+
+
+def _ranking_setup(client: TestClient) -> str:
+    intent = client.post("/api/portfolio/intents", headers=_h(), json={"segment": "STUDENT", "demandSource": "MOCK"}).json()
+    pid = intent["portfolioId"]
+    client.post(f"/api/portfolio/intents/{pid}/candidates", headers=_h())
+    return pid
+
+
+@pytest.mark.parametrize(
+    "policy_body,expected_detail_fragment",
+    [
+        ({"policy": {"weights": None}}, "policy.weights"),
+        ({"policy": {"weights": []}}, "policy.weights"),
+        ({"policy": {"weights": {"bogus": 1}}}, "未知欄位"),
+        ({"policy": {"weights": {"utilization": "heavy"}}}, "utilization"),
+        ({"policy": {"weights": {"utilization": True}}}, "utilization"),
+        ({"policy": 42}, "policy 須為物件"),
+    ],
+)
+def test_ranking_invalid_policy_returns_422_not_500(
+    client: TestClient,
+    policy_body: dict,
+    expected_detail_fragment: str,
+) -> None:
+    pid = _ranking_setup(client)
+    res = client.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(), json=policy_body)
+    assert res.status_code == 422
+    assert expected_detail_fragment in res.json()["detail"]
+    assert "TypeError" not in res.text
+
+
+@pytest.mark.parametrize(
+    "raw_body,expected_detail_fragment",
+    [
+        ('{"policy":{"weights":{"utilization":NaN}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":Infinity}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":-Infinity}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":1e400}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":1' + "0" * 400 + '}}}', "超出範圍"),
+    ],
+    ids=["nan", "infinity", "neg-infinity", "float-overflow", "401-digit-int"],
+)
+def test_ranking_non_finite_or_overflowing_weight_returns_422(
+    client: TestClient,
+    platform,  # noqa: ANN001
+    raw_body: str,
+    expected_detail_fragment: str,
+) -> None:
+    pid = _ranking_setup(client)
+    path = platform.portfolio.root / "portfolio.json"
+    rankings_before = dict(platform.portfolio.rankings)
+    file_before = path.read_bytes()
+    res = client.post(
+        f"/api/portfolio/intents/{pid}/rankings",
+        headers={**_h(), "content-type": "application/json"},
+        content=raw_body,
+    )
+    assert res.status_code == 422
+    assert expected_detail_fragment in res.json()["detail"]
+    assert "utilization" in res.json()["detail"]
+    assert "OverflowError" not in res.text
+    assert platform.portfolio.rankings == rankings_before
+    assert path.read_bytes() == file_before
+    assert b"NaN" not in path.read_bytes()
+    assert b"Infinity" not in path.read_bytes()
+
+
+@pytest.mark.parametrize("weight", [1e308, -1e308], ids=["pos-1e308", "neg-1e308"])
+def test_ranking_finite_weights_whose_sum_overflows_returns_422(
+    client: TestClient,
+    platform,  # noqa: ANN001
+    weight: float,
+) -> None:
+    pid = _ranking_setup(client)
+    # A prior successful ranking shortlists candidates, so any state rewrite is observable.
+    assert client.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(), json={}).status_code == 200
+    base_weights = DEFAULT_RANKING_POLICY["weights"]
+    assert isinstance(base_weights, dict)
+    weights = dict.fromkeys(base_weights, weight)
+    path = platform.portfolio.root / "portfolio.json"
+    rankings_before = dict(platform.portfolio.rankings)
+    states_before = {cid: rec["state"] for cid, rec in platform.portfolio.candidates.items()}
+    assert "SHORTLISTED" in states_before.values()
+    file_before = path.read_bytes()
+
+    res = client.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(), json={"policy": {"weights": weights}})
+
+    assert res.status_code == 422
+    assert "溢位" in res.json()["detail"]
+    assert "OverflowError" not in res.text
+    assert platform.portfolio.rankings == rankings_before
+    assert {cid: rec["state"] for cid, rec in platform.portfolio.candidates.items()} == states_before
+    assert path.read_bytes() == file_before
+    assert b"Infinity" not in file_before and b"NaN" not in file_before
+
+
+def test_ranking_valid_custom_weights_succeeds(client: TestClient) -> None:
+    pid = _ranking_setup(client)
+    base_weights = DEFAULT_RANKING_POLICY["weights"]
+    assert isinstance(base_weights, dict)
+    weights = {**base_weights}
+    weights["utilization"] = 0.4
+    weights["landedCost"] = 0.05
+    res = client.post(
+        f"/api/portfolio/intents/{pid}/rankings",
+        headers=_h(),
+        json={"policy": {"weights": weights}},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body.get("top10")
+    assert body.get("rankingId")
+
+
+def test_scenario_via_factory_matches_http(client: TestClient, tmp_path) -> None:
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a=TENANT_A, tenant_b=TENANT_B)
+    c = TestClient(create_app(plat))
+    pid = next(i["portfolioId"] for i in plat.portfolio.intents.values() if i["tenantId"] == TENANT_A)
+    ranking = c.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(TENANT_A), json={}).json()
+    assert ranking["demandReal"] is False
+    assert len(ranking["top10"]) == 10

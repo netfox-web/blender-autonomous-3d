@@ -5,15 +5,16 @@ from __future__ import annotations
 import math
 import os
 import re
+from datetime import datetime, timezone
 
 from pathlib import Path
 from typing import Any, NoReturn
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
-from fox3d.journal import SemanticKeyConflictError
+from fox3d.journal import JournalCommitError, SemanticKeyConflictError
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
 from fox3d.commerce import ImportValidationError, ProviderDisconnectedError
@@ -25,12 +26,31 @@ from fox3d.contracts import (
     SCHEMA_SUPPLIER,
 )
 from fox3d.features import feature_index
-from fox3d.infra import validate_tenant_id
+from fox3d.infra import utcnow, validate_tenant_id
+from fox3d.release import MAX_EVENTS_PER_TENANT
 from fox3d.operator import make_token, require_confirm
+from fox3d.pilot_packing_api import pilot_packing_router
+from fox3d.pilot_batch_api import pilot_batch_router
+from fox3d.pilot_qc_api import pilot_qc_router
+from fox3d.pilot_shipping_api import pilot_shipping_router
+from fox3d.mfg_release_api import mfg_release_router
 from fox3d.platform import Platform
-from fox3d.recovery import PilotException
+from fox3d.product_rd_store import (
+    ProductRDIdempotencyConflict,
+    validate_optional_idempotency_key,
+    validate_rd_actor,
+    validate_rd_text,
+    validate_rd_v2_text,
+    validate_rd_variant_count,
+)
+from fox3d.recovery import ExceptionStateError, PilotException
+from fox3d.cyclecount_api import cyclecount_router
+from fox3d.materials_lot_ops_api import materials_lot_ops_router
+from fox3d.packaging_v2_api import packaging_v2_router
+from fox3d.portfolio_api import portfolio_router
+from fox3d.prototype_api import prototype_router
 from fox3d.recipe_admin_api import recipe_router
-from fox3d.station import STATION_CAPS
+from fox3d.station import ADMIN_STATION_STATUSES, STATION_CAPS
 
 
 def _dimensions(value: Any) -> None:
@@ -93,10 +113,92 @@ def _validate_remnant_reserve(body: dict[str, Any]) -> tuple[str, int, float | N
     return by, raw_version, lease_seconds, idem
 
 
+_MAX_SKU_CHARS = 128
+_MAX_SKU_UTF8_BYTES = 200
+
+
+def _require_valid_sku(sku: Any, *, allow_separators: bool = False) -> str:
+    """SKU limits shared by JSON create and multipart upload (422, never 500).
+
+    Both enforce the same character and UTF-8 byte limits. Upload keeps its
+    existing contract of accepting ``/``, ``\\`` and control characters, which
+    ``safe_path_component`` encodes; JSON create rejects them.
+    """
+    if not isinstance(sku, str) or not sku or len(sku) > _MAX_SKU_CHARS:
+        raise HTTPException(422, "sku 格式錯誤")
+    if any(0xD800 <= ord(c) <= 0xDFFF for c in sku) or len(sku.encode("utf-8", "surrogatepass")) > _MAX_SKU_UTF8_BYTES:
+        raise HTTPException(422, "sku 格式錯誤")
+    if not allow_separators and any(ord(c) < 32 or c in "/\\" for c in sku):
+        raise HTTPException(422, "sku 格式錯誤")
+    return sku
+
+
 def _entity_id(value: Any) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
         raise HTTPException(422, "entityId 格式錯誤")
     return value
+
+
+_SNAPSHOT_KINDS = ("material", "hardware", "packaging", "logistics", "fx")
+_MAX_COMMERCE_SNAPSHOT_PAGE = 100
+_SNAPSHOT_AT_RE = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    r"(?:[T ][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,6})?)?(?:Z|[+-][0-9]{2}:[0-9]{2})?)?$"
+)
+
+
+def _snapshot_at(raw: str | None) -> str:
+    if raw is None:
+        return utcnow().isoformat()
+    if not isinstance(raw, str) or not _SNAPSHOT_AT_RE.fullmatch(raw):
+        raise HTTPException(422, "at 格式錯誤")
+    try:
+        if "T" in raw or " " in raw:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                parsed.astimezone(timezone.utc)
+        else:
+            datetime.strptime(raw, "%Y-%m-%d")
+    except (ValueError, OverflowError):
+        raise HTTPException(422, "at 格式錯誤") from None
+    return raw
+
+
+def _approval_stale(ledger: Any, approval: dict[str, Any], entity: dict[str, Any] | None) -> bool:
+    """Read-only staleness. A stored stale flag wins; otherwise compare current hashes."""
+    if approval.get("stale") is True:
+        return True
+    if entity is None:
+        return False
+    return bool(ledger.is_stale(approval, entity))
+
+
+def _annotate_release_row(row: dict[str, Any]) -> None:
+    """Mark released only when the row is an export approval that is not stale or blocked."""
+    decision = row.get("decision")
+    state = row.get("state")
+    decision_s = decision if isinstance(decision, str) else ""
+    state_s = state if isinstance(state, str) else ""
+    stale = row.get("stale") is True or decision_s == "STALE" or state_s == "STALE"
+    blocked = row.get("blocked") is True or decision_s == "BLOCKED" or state_s == "BLOCKED"
+    approved = decision_s == "APPROVED_FOR_EXPORT" or state_s == "APPROVED_FOR_EXPORT"
+    row["stale"] = stale
+    row["blocked"] = blocked
+    row["released"] = approved and not stale and not blocked and row.get("verificationAvailable") is not False
+
+
+def _stamp_snapshot_tenant(rows: Any, tenant_id: str) -> Any:
+    if not isinstance(rows, list):
+        return rows
+    stamped: list[Any] = []
+    for row in rows:
+        if isinstance(row, dict):
+            rec = dict(row)
+            rec["tenantId"] = tenant_id
+            stamped.append(rec)
+        else:
+            stamped.append(row)
+    return stamped
 
 
 # These services raise PermissionError for bad input. Handlers check fields first.
@@ -135,6 +237,57 @@ def _raise_permission(exc: PermissionError) -> NoReturn:
     if message.startswith("tenant isolation"):
         raise HTTPException(403, message) from exc
     raise HTTPException(422, message) from exc
+
+
+def _pilot_tenant_missing(exc: BaseException) -> bool:
+    return isinstance(exc, (KeyError, PermissionError)) and (
+        isinstance(exc, KeyError) or str(exc).startswith("tenant isolation")
+    )
+
+
+def _require_json_object(payload: Any, *, allow_none: bool = False) -> dict[str, Any]:
+    if payload is None and allow_none:
+        return {}
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "請求內容須為 JSON 物件")
+    return payload
+
+
+def _optional_str_field(payload: dict[str, Any], field: str) -> str | None:
+    raw = payload.get(field)
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise HTTPException(422, f"{field} 格式錯誤")
+    return raw
+
+
+def _optional_key_field(payload: dict[str, Any], field: str) -> str | None:
+    if field not in payload or payload[field] in (None, ""):
+        return None
+    raw = payload[field]
+    if not isinstance(raw, str):
+        raise HTTPException(422, f"{field} 格式錯誤")
+    val = raw.strip()
+    if not val or len(raw) > 200:
+        raise HTTPException(422, f"{field} 格式錯誤")
+    return val
+
+
+def _paginate_list(
+    request: Request,
+    rows: list[dict[str, Any]],
+    *,
+    offset: int,
+    limit: int,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    total = len(rows)
+    base: dict[str, Any] = dict(extra or {})
+    if "offset" not in request.query_params and "limit" not in request.query_params:
+        return {**base, "items": rows, "total": total, "offset": 0, "limit": total}
+    page = rows[offset : offset + limit]
+    return {**base, "items": page, "total": total, "offset": offset, "limit": limit}
 
 
 def _require_text_fields(payload: dict[str, Any], names: tuple[str, ...]) -> None:
@@ -367,15 +520,17 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, "body tenantId does not match X-Tenant-Id")
         return header
 
-    def bounded_count(raw: Any, default: int, field: str = "count") -> int:
+    def bounded_count(
+        raw: Any, default: int, field: str = "count", *, max_value: int = 100
+    ) -> int:
         if raw is None:
             n = default
         elif isinstance(raw, bool) or not isinstance(raw, int):
-            raise HTTPException(422, f"{field} 須為 1 至 100 的整數")
+            raise HTTPException(422, f"{field} 須為 1 至 {max_value} 的整數")
         else:
             n = raw
-        if not 1 <= n <= 100:
-            raise HTTPException(422, f"{field} 須為 1 至 100 的整數")
+        if not 1 <= n <= max_value:
+            raise HTTPException(422, f"{field} 須為 1 至 {max_value} 的整數")
         return n
 
     @app.get("/health")
@@ -403,6 +558,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             return get_platform().submit_job(payload)
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409 if str(exc) == "idempotency conflict" else 422, str(exc)) from exc
 
     @app.get("/api/3d/jobs")
     def list_jobs(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -446,8 +603,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        if payload.get("sku") is None:
-            raise HTTPException(422, "缺少 sku")
+        _require_valid_sku(payload.get("sku"))
         try:
             return get_platform().create_twin(payload)
         except ValidationError as exc:
@@ -460,8 +616,13 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         x_tenant_id: str | None = Header(default=None),
     ) -> dict[str, Any]:
         tid = tenant(x_tenant_id)
+        _require_valid_sku(sku, allow_separators=True)
         data = await file.read()
         return get_platform().product_e2e(tenant_id=tid, sku=sku, glb_bytes=data)
+
+    @app.get("/api/digital-twins")
+    def list_twins(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return {"items": [t.model_dump(mode="json") for t in get_platform().twins.list(tenant_id=tenant(x_tenant_id))]}
 
     @app.get("/api/digital-twins/{twin_id}")
     def read_twin(twin_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -485,6 +646,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             return get_platform().product_360_e2e(tenant_id=tenant(x_tenant_id), twin_id=twin_id, frames=36)
         except (KeyError, PermissionError):
             raise HTTPException(404, "找不到數位分身") from None
+
+    @app.get("/api/parametric/products")
+    def list_parametrics(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        return {"items": [r for r in get_platform().parametrics.values() if r.get("spec", {}).get("tenantId") == tid]}
 
     @app.post("/api/parametric/products")
     def create_parametric(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -549,20 +715,99 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from exc
 
-    @app.post("/api/product-rd/generate")
-    def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def _run_product_rd_generate(
+        payload: dict[str, Any],
+        x_tenant_id: str | None,
+        *,
+        v2: bool,
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         plat = get_platform()
         try:
-            rd = plat.product_rd(tenant_id=tid, text=payload.get("text") or "", variant_count=bounded_count(payload.get("variantCount"), 12, "variantCount"))
-            if rd.get("baseSpec") and not plat._production_gate():
-                stored = plat.create_parametric({**rd["baseSpec"], "tenantId": tid, "kind": rd["baseSpec"].get("kind")})
-                rd["parametricRender"] = plat.render_parametric(stored["spec"]["productId"], tenant_id=tid)
-            return rd
+            text = validate_rd_v2_text(payload.get("text")) if v2 else validate_rd_text(payload.get("text"))
+            variant_count = validate_rd_variant_count(payload.get("variantCount"))
+            idem = validate_optional_idempotency_key(payload.get("idempotencyKey"))
+            return plat.product_rd(
+                tenant_id=tid,
+                text=text,
+                variant_count=variant_count,
+                idempotency_key=idem,
+                render_base=True,
+            )
+        except ProductRDIdempotencyConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from None
-        except (ValueError, TypeError):
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except (TypeError, OverflowError):
             raise HTTPException(422, "商品欄位格式錯誤") from None
+
+    @app.post("/api/product-rd/generate")
+    def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return _run_product_rd_generate(payload, x_tenant_id, v2=False)
+
+    @app.post("/api/v2/product-rd/generate")
+    def product_rd_v2(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return _run_product_rd_generate(payload, x_tenant_id, v2=True)
+
+    @app.get("/api/product-rd/results")
+    def list_product_rd_results(
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=20, ge=1, le=100),
+        cursor: str | None = Query(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        try:
+            return get_platform().list_product_rd_results(
+                tenant_id=tid,
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.get("/api/product-rd/results/{result_id}")
+    def read_product_rd_result(
+        result_id: str,
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        try:
+            return get_platform().get_product_rd_result(result_id, tenant_id=tid)
+        except KeyError:
+            raise HTTPException(404, "找不到研發方案") from None
+
+    @app.post("/api/product-rd/results/{result_id}/approve")
+    def approve_product_rd_result(
+        result_id: str,
+        payload: dict[str, Any] | None = None,
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        plat = get_platform()
+        if not plat.rd_store.exists(tid, result_id):
+            raise HTTPException(404, "找不到研發方案")
+        try:
+            actor = validate_rd_actor(body.get("actor"), default="human")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        try:
+            return plat.approve_product_rd(
+                result_id,
+                tenant_id=tid,
+                actor=actor,
+                confirm=body.get("confirm"),
+            )
+        except KeyError:
+            raise HTTPException(404, "找不到研發方案") from None
+        except PermissionError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     @app.post("/api/e2e/smoke")
     def e2e_smoke() -> dict[str, Any]:
@@ -679,7 +924,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def kd_catalog(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
-        return get_platform().kd.generate_candidates(tenant_id=tid, count=bounded_count(body.get("count"), 24), render=bool(body.get("render")))
+        plat = get_platform()
+        max_count = int(plat.kd.max_unapproved_per_tenant)
+        if max_count < 1:
+            raise HTTPException(422, "目前未開放未核准 KD 候選保留上限")
+        count = bounded_count(body.get("count"), min(24, max_count), max_value=max_count)
+        try:
+            return plat.kd.generate_candidates(tenant_id=tid, count=count, render=bool(body.get("render")))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     @app.get("/api/kd/readiness")
     def kd_readiness() -> dict[str, Any]:
@@ -699,9 +952,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         }
 
     @app.get("/api/materials")
-    def materials(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def materials(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        offset: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
-        return {**materials_catalog(), "lots": get_platform().lots.list(tenant_id=tid)}
+        rows = get_platform().lots.list(tenant_id=tid)
+        total = len(rows)
+        if "offset" not in request.query_params and "limit" not in request.query_params:
+            return {**materials_catalog(), "lots": rows, "total": total, "offset": 0, "limit": total}
+        page = rows[offset : offset + limit]
+        return {**materials_catalog(), "lots": page, "total": total, "offset": offset, "limit": limit}
 
     @app.post("/api/materials/lots")
     def create_lot(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -786,11 +1049,23 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         result = run_benchmark(plat, tenant_id=tid)
         return plat.physical.record_benchmark(result, tenant_id=tid)
 
+    @app.get("/api/kd/candidates")
+    def list_kd_candidates(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().kd.list_candidates(tenant_id=tid)
+        return {"items": items, "candidates": items}
+
     @app.post("/api/kd/candidates")
     def kd_candidates(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
         return get_platform().physical.kd_optimized_board(tenant_id=tid, count=bounded_count(body.get("count"), 10))
+
+    @app.get("/api/retail/fixtures")
+    def list_retail_fixtures(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().physical.retail.list(tenant_id=tid)
+        return {"items": items, "fixtures": items}
 
     @app.post("/api/retail/fixtures")
     def retail_fixtures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -813,6 +1088,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         except (ValueError, TypeError, KeyError):
             raise HTTPException(422, "展示架欄位格式錯誤") from None
 
+    @app.get("/api/packaging/structures")
+    def list_packaging_structures(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().physical.packaging.list(tenant_id=tid)
+        return {"items": items, "structures": items}
+
     @app.post("/api/packaging/structures")
     def packaging_structures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
@@ -826,6 +1107,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             return get_platform().physical.packaging.build(tenant_id=tid, family=family, product_dims=dims, render=bool(payload.get("render")))
         except (ValidationError, ValueError, TypeError, KeyError):
             raise HTTPException(422, "包裝欄位格式錯誤") from None
+
+    @app.get("/api/acrylic/products")
+    def list_acrylic_products(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().physical.acrylic.list(tenant_id=tid)
+        return {"items": items, "products": items}
 
     @app.post("/api/acrylic/products")
     def acrylic_products(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -846,12 +1133,25 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def physical_approve(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         entity_id = _entity_id(payload.get("entityId", payload.get("productId")))
+        raw_actor = payload.get("actor")
+        if raw_actor is not None and (not isinstance(raw_actor, str) or not raw_actor.strip()):
+            raise HTTPException(422, "actor 格式錯誤")
+        actor = raw_actor.strip() if isinstance(raw_actor, str) and raw_actor.strip() else "human"
+        raw_kind = payload.get("kind")
+        if raw_kind is not None and not isinstance(raw_kind, str):
+            raise HTTPException(422, "kind 格式錯誤")
+        kind = raw_kind.strip() if isinstance(raw_kind, str) and raw_kind.strip() else "product"
         physical = get_platform().physical
-        for factory in (physical.acrylic, physical.packaging, physical.retail):
-            item = factory.items.get(entity_id)
-            if item is not None and item.get("tenantId") != tid:
-                raise HTTPException(404, "找不到商品")
-        return physical.approve(tenant_id=tid, entity_id=entity_id, actor=str(payload.get("actor") or "human"), kind=str(payload.get("kind") or "product"))
+        try:
+            return physical.approve(
+                tenant_id=tid,
+                entity_id=entity_id,
+                actor=actor,
+                kind=kind,
+                entity=payload.get("entity") if isinstance(payload.get("entity"), dict) else None,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "找不到商品") from exc
 
     @app.get("/api/physical-os/families")
     def physical_families() -> dict[str, Any]:
@@ -860,13 +1160,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.get("/api/physical-os/readiness")
     def physical_readiness() -> dict[str, Any]:
-        return get_platform().physical.readiness()
+        return (platform or get_platform()).physical.readiness()
 
     @app.get("/api/readiness")
     def scoped_ready() -> dict[str, Any]:
         from fox3d.readiness import scoped_readiness
 
-        return scoped_readiness()
+        report = (platform or get_platform()).pilot.logistics.inspect_tenantless_carrier_quotes()
+        tenantless_count = int(report.get("tenantlessCount") or 0)
+        return scoped_readiness(evidence={"tenantlessCarrierQuotes": tenantless_count})
 
     @app.post("/api/evidence/verify")
     def evidence_verify(payload: dict[str, Any]) -> dict[str, Any]:
@@ -876,36 +1178,168 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/release/advance")
     def release_advance(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
+        entity_id = _entity_id(payload.get("entityId"))
+        raw_actor = payload.get("actor")
+        if raw_actor is not None and (not isinstance(raw_actor, str) or not raw_actor.strip()):
+            raise HTTPException(422, "actor 格式錯誤")
+        actor = raw_actor.strip() if isinstance(raw_actor, str) and raw_actor.strip() else "human"
+        raw_target = payload.get("target")
+        if raw_target is not None and (not isinstance(raw_target, str) or not raw_target.strip()):
+            raise HTTPException(422, "target 格式錯誤")
+        target = raw_target.strip() if isinstance(raw_target, str) and raw_target.strip() else "WAITING_APPROVAL"
+        raw_entity = payload.get("entity")
+        if raw_entity is not None and not isinstance(raw_entity, dict):
+            raise HTTPException(422, "entity 必須是物件")
+        if isinstance(raw_entity, dict):
+            raw_spec = raw_entity.get("spec")
+            ent_tid = raw_entity.get("tenantId") or (raw_spec.get("tenantId") if isinstance(raw_spec, dict) else None)
+            if ent_tid not in (None, "", tid):
+                raise HTTPException(404, "找不到商品")
+        raw_ev_ok = payload.get("evidenceOk")
+        if raw_ev_ok is not None and not isinstance(raw_ev_ok, bool):
+            raise HTTPException(422, "evidenceOk 必須是布林值")
         plat = get_platform()
+        if plat.physical.is_foreign_entity(entity_id, tenant_id=tid):
+            raise HTTPException(404, "找不到商品")
+        if "entity" in payload and raw_entity is not None:
+            entity_obj = raw_entity
+        else:
+            found = plat.physical.find_entity(entity_id, tenant_id=tid)
+            plat.release._sync_tenant(tid)
+            prior = plat.release.approvals.get((tid, entity_id))
+            if found is not None:
+                entity_obj = dict(found)
+                if prior and (prior.get("hashes") or {}).get("evidenceHash") and not entity_obj.get("evidenceHash"):
+                    ev_hash = prior["hashes"]["evidenceHash"]
+                    entity_obj["evidenceHash"] = ev_hash
+                    entity_obj["lineage"] = {**(entity_obj.get("lineage") or {}), "evidenceHash": ev_hash}
+            elif prior and prior.get("hashes"):
+                entity_obj = {
+                    "engineeringHash": prior["hashes"].get("engineeringHash"),
+                    "evidenceHash": prior["hashes"].get("evidenceHash"),
+                    "lineage": dict(prior["hashes"]),
+                }
+            else:
+                entity_obj = {}
         try:
-            return plat.release.advance(
-                _entity_id(payload.get("entityId")),
+            advanced = plat.release.advance(
+                entity_id,
                 tenant_id=tid,
-                target=str(payload.get("target") or "WAITING_APPROVAL"),
-                actor=str(payload.get("actor") or "human"),
-                entity=payload.get("entity") or {},
+                target=target,
+                actor=actor,
+                entity=entity_obj,
                 evidence_ok=bool(payload.get("evidenceOk")),
             )
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if entity_id in plat.kd.candidates:
+            cand = plat.kd.candidates.get(entity_id)
+            if isinstance(cand, dict) and plat.kd._candidate_tenant(cand) == tid and not cand.get("physicalApproved"):
+                updated_cand = dict(cand)
+                updated_cand["physicalApproved"] = True
+                plat.kd.candidates[entity_id] = updated_cand
+                plat.kd._mark_or_persist(tid)
+        return advanced
+
+    @app.get("/api/release/events")
+    def release_events(
+        entityId: str | None = Query(default=None),
+        limit: int = Query(default=MAX_EVENTS_PER_TENANT, ge=1, le=MAX_EVENTS_PER_TENANT),
+        offset: int = Query(default=0, ge=0),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        entity_id = _entity_id(entityId) if entityId is not None else None
+        plat = get_platform()
+        try:
+            page = plat.release.events_page(
+                tid,
+                entity_id=entity_id,
+                limit=limit,
+                offset=offset,
+                include_archived=True,
+            )
+        except ValueError:
+            raise HTTPException(422, "查詢參數超出範圍") from None
+        items = page.get("items")
+        if isinstance(items, list):
+            for ev in items:
+                if isinstance(ev, dict):
+                    _annotate_release_row(ev)
+        page["events"] = page.get("items")
+        return page
+
+    @app.get("/api/release/approvals")
+    def release_approvals(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        plat = get_platform()
+        try:
+            records = plat.release.list_approvals(tid)
+        except ValueError:
+            raise HTTPException(422, "查詢參數超出範圍") from None
+        items: list[dict[str, Any]] = []
+        for rec in records:
+            raw_id = rec.get("entityId")
+            entity_id = raw_id if isinstance(raw_id, str) else ""
+            entity = plat.physical.find_entity(entity_id, tenant_id=tid) if entity_id else None
+            rec["verificationAvailable"] = isinstance(entity, dict)
+            rec["stale"] = _approval_stale(plat.release, rec, entity if isinstance(entity, dict) else None)
+            _annotate_release_row(rec)
+            items.append(rec)
+        return {"items": items, "total": len(items), "tenantId": tid}
 
     @app.post("/api/commerce/import")
     def commerce_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        _ = tenant(x_tenant_id)
+        tid = tenant(x_tenant_id)
         plat = get_platform()
         kind = str(payload.get("kind") or "material")
         if kind not in {"material", "hardware", "packaging", "logistics", "fx"}:
             raise HTTPException(422, "未知的 provider kind")
         store = getattr(plat.providers, kind)
         source = str(payload.get("source") or "MANUAL")
-        rows = payload.get("rows", [])
+        rows = _stamp_snapshot_tenant(payload.get("rows", []), tid)
         try:
             return {"items": plat.providers.import_rows(store, rows, source=source), "liveProviderReady": False}
         except (ProviderDisconnectedError, ImportValidationError) as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/commerce/snapshots")
+    def commerce_snapshots(
+        at: str | None = Query(default=None),
+        limit: int = Query(default=20, ge=1, le=_MAX_COMMERCE_SNAPSHOT_PAGE),
+        offset: int = Query(default=0, ge=0),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        moment = _snapshot_at(at)
+        plat = get_platform()
+        visible: list[dict[str, Any]] = []
+        for kind in _SNAPSHOT_KINDS:
+            store = getattr(plat.providers, kind)
+            for row in store.active(at=moment):
+                if not isinstance(row, dict) or row.get("tenantId") != tid:
+                    continue
+                visible.append(dict(row))
+        visible.sort(
+            key=lambda row: (
+                str(row.get("kind") or ""),
+                str(row.get("snapshotId") or ""),
+                str(row.get("importedAt") or ""),
+            )
+        )
+        total = len(visible)
+        page = visible[offset : offset + limit]
+        return {
+            "items": page,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "hasMore": offset + len(page) < total,
+            "at": moment,
+        }
 
     @app.post("/api/safety/evaluate")
     def safety_eval(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -925,16 +1359,34 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         return get_platform().pilot.console(tenant_id=require_tenant(x_tenant_id))
 
     @app.get("/api/pilot/work-orders")
-    def pilot_work_orders(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def pilot_work_orders(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=100),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
-        items = [wo for wo in get_platform().pilot.workorders.orders.values() if wo.get("tenantId") == tid]
-        return {"items": items, "liveMachineControl": False}
-
-    @app.get("/api/pilot/batches")
-    def pilot_batches(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = require_tenant(x_tenant_id)
-        items = [b for b in get_platform().pilot_batch.batches.values() if b.get("tenantId") == tid]
-        return {"items": items, "liveMachineControl": False, "physicalPilotBatchValidated": False}
+        pilot = get_platform().pilot
+        with pilot.workorders._lock:
+            orders = [dict(wo) for wo in pilot.workorders.orders.values() if wo.get("tenantId") == tid]
+        total = len(orders)
+        paginated = "offset" in request.query_params or "limit" in request.query_params
+        page = orders[offset : offset + limit] if paginated else orders
+        enriched = [
+            {
+                **wo,
+                "qcHold": wo.get("state") == "QC_HOLD",
+                "qcOk": pilot.qc.required_final_ok(
+                    wo["workOrderId"],
+                    str(wo.get("productFamily") or "KD_FURNITURE"),
+                    tenant_id=tid,
+                )["ok"],
+            }
+            for wo in page
+        ]
+        if not paginated:
+            return {"items": enriched, "total": total, "offset": 0, "limit": total, "liveMachineControl": False}
+        return {"items": enriched, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
 
     @app.get("/api/pilot/batches/board")
     def pilot_batch_board(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -1024,6 +1476,73 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
 
+    @app.get("/api/pilot/stations")
+    def pilot_stations_list(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        rows = get_platform().pilot.stations.list(tenant_id=tid)
+        return _paginate_list(request, rows, offset=offset, limit=limit)
+
+    @app.put("/api/pilot/stations/{station_id}/status")
+    def pilot_station_status(
+        station_id: str,
+        payload: Any = Body(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        body = _require_json_object(payload)
+        tid = require_tenant(x_tenant_id, body)
+        raw_status = body.get("status")
+        if not isinstance(raw_status, str) or raw_status not in ADMIN_STATION_STATUSES:
+            raise HTTPException(422, f"status 可用值: {', '.join(sorted(ADMIN_STATION_STATUSES))}")
+        actor = (_optional_str_field(body, "actor") or "").strip() or "api"
+        note = _optional_str_field(body, "note")
+        t_key = _optional_key_field(body, "transitionId")
+        i_key = _optional_key_field(body, "idempotencyKey")
+        if t_key and i_key and t_key != i_key:
+            raise HTTPException(422, "transitionId 與 idempotencyKey 不一致")
+        try:
+            return get_platform().pilot.stations.set_status(
+                station_id,
+                tenant_id=tid,
+                status=raw_status,
+                actor=actor,
+                note=note,
+                transition_id=t_key or i_key,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except PermissionError as exc:
+            if _pilot_tenant_missing(exc):
+                raise HTTPException(404, "resource not found") from exc
+            _raise_permission(exc)
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except JournalCommitError as exc:
+            raise HTTPException(503, "稽核日誌寫入失敗，請重試") from exc
+
+    @app.get("/api/pilot/leases")
+    def pilot_leases_list(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        stationId: str | None = None,
+        status: str | None = None,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        rows = get_platform().pilot.dispatcher.list_leases(
+            tenant_id=tid,
+            station_id=stationId,
+            status=status,
+        )
+        return _paginate_list(request, rows, offset=offset, limit=limit, extra={"liveMachineControl": False})
+
     @app.post("/api/pilot/stations")
     def pilot_station(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
@@ -1110,9 +1629,78 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, str(exc)) from exc
 
     @app.get("/api/pilot/exceptions")
-    def pilot_exceptions(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def pilot_exceptions(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        status: str | None = None,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
-        return {"items": get_platform().pilot.inbox.list(tenant_id=tid)}
+        rows = get_platform().pilot.inbox.list(tenant_id=tid, status=status)
+        return _paginate_list(request, rows, offset=offset, limit=limit)
+
+    @app.post("/api/pilot/exceptions/{exception_id}/ack")
+    def pilot_exception_ack(
+        exception_id: str,
+        payload: Any = Body(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        body = _require_json_object(payload, allow_none=True)
+        tid = require_tenant(x_tenant_id, body)
+        actor = (_optional_str_field(body, "actor") or "").strip() or "api"
+        note = _optional_str_field(body, "note")
+        try:
+            return get_platform().pilot.inbox.acknowledge(
+                exception_id,
+                tenant_id=tid,
+                actor=actor,
+                note=note,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except ExceptionStateError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except PermissionError as exc:
+            if _pilot_tenant_missing(exc):
+                raise HTTPException(404, "resource not found") from exc
+            _raise_permission(exc)
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except JournalCommitError as exc:
+            raise HTTPException(503, "稽核日誌寫入失敗，請重試") from exc
+
+    @app.post("/api/pilot/exceptions/{exception_id}/resolve")
+    def pilot_exception_resolve(
+        exception_id: str,
+        payload: Any = Body(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        body = _require_json_object(payload, allow_none=True)
+        tid = require_tenant(x_tenant_id, body)
+        actor = (_optional_str_field(body, "actor") or "").strip() or "api"
+        resolution = _optional_str_field(body, "resolution")
+        try:
+            return get_platform().pilot.inbox.resolve(
+                exception_id,
+                tenant_id=tid,
+                actor=actor,
+                resolution=resolution,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except PermissionError as exc:
+            if _pilot_tenant_missing(exc):
+                raise HTTPException(404, "resource not found") from exc
+            _raise_permission(exc)
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except JournalCommitError as exc:
+            raise HTTPException(503, "稽核日誌寫入失敗，請重試") from exc
 
     @app.post("/api/pilot/import")
     def pilot_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -1151,6 +1739,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def pilot_consume(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
+        wo = get_platform().pilot.workorders.orders.get(work_order_id)
+        if wo is None or wo.get("tenantId") != tid:
+            raise HTTPException(404, "找不到工單")
         try:
             return get_platform().pilot.confirm_action(
                 tenant_id=tid,
@@ -1166,6 +1757,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def pilot_complete_wo(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
+        wo = get_platform().pilot.workorders.orders.get(work_order_id)
+        if wo is None or wo.get("tenantId") != tid:
+            raise HTTPException(404, "找不到工單")
         try:
             return get_platform().pilot.confirm_action(
                 tenant_id=tid,
@@ -1209,7 +1803,18 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def admin_features_index(request: Request) -> dict[str, Any]:
         return feature_index(list(request.app.routes))
 
-    app.include_router(recipe_router(lambda: platform if platform is not None else get_platform()))
+    platform_provider = lambda: platform if platform is not None else get_platform()
+    app.include_router(recipe_router(platform_provider))
+    app.include_router(pilot_packing_router(platform_provider))
+    app.include_router(pilot_batch_router(platform_provider))
+    app.include_router(pilot_qc_router(platform_provider))
+    app.include_router(pilot_shipping_router(platform_provider))
+    app.include_router(mfg_release_router(platform_provider))
+    app.include_router(cyclecount_router(platform_provider))
+    app.include_router(materials_lot_ops_router(platform_provider))
+    app.include_router(prototype_router(platform_provider))
+    app.include_router(portfolio_router(platform_provider))
+    app.include_router(packaging_v2_router())
     for page in page_routers(lambda: platform if platform is not None else get_platform()):
         app.include_router(page)
     return app

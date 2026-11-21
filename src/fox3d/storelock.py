@@ -74,6 +74,37 @@ class FileLock:
             self.release()
             raise
 
+    def try_acquire(self) -> bool:
+        """Take the lock if it is free. Never waits. False means another holder owns it."""
+        if self._acquired:
+            return True
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = open(self.path, "a+b")
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                self._fh.seek(0)
+                if self._fh.read(1) == b"":
+                    self._fh.write(b"\0")
+                    self._fh.flush()
+                self._fh.seek(0)
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._acquired = True
+            return True
+        except OSError:
+            try:
+                self._fh.close()
+            except OSError:
+                pass
+            self._fh = None
+            self._acquired = False
+            return False
+
     def release(self) -> None:
         if self._fh is None:
             return

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -106,50 +107,54 @@ class OperatorShiftService:
                 "semantic_key": f"{tenant_id}::operator-enabled::{change_id}",
             }
             outbox = self.outbox or getattr(self.journal, "outbox", None)
-            tx = outbox.prepare(event) if self.journal is not None and outbox is not None else None
-            if tx:
-                _maybe_crash(self, "after-outbox-prepare")
-            old_enabled = rec["enabled"]
-            old_changes = rec.get("enablementChangeIds")
-            # A PREPARED transaction may have persisted its business change before
-            # its outbox marker was written. Keep its evidence until it is closed.
-            # With no outbox available, preserve legacy evidence conservatively.
-            if outbox is not None:
-                open_ids = {
-                    (row.get("event") or {}).get("payload", {}).get("changeId")
-                    for row in outbox.list_open(tenant_id=tenant_id)
-                    if row.get("aggregateType") == "Operator"
-                    and row.get("aggregateId") == operator_id
-                    and (row.get("event") or {}).get("event_type") == "identity.operator_enabled"
-                }
-                changes = [item for item in (old_changes or []) if item in open_ids]
-            else:
-                changes = list(old_changes or [])
-            if tx:
-                changes.append(change_id)
-            rec["enabled"] = bool(enabled)
-            if changes:
-                rec["enablementChangeIds"] = changes
-            else:
-                rec.pop("enablementChangeIds", None)
-            try:
-                self.persist()
-            except Exception:
-                rec["enabled"] = old_enabled
-                if old_changes is None:
-                    rec.pop("enablementChangeIds", None)
+            guard: AbstractContextManager[None] = nullcontext()
+            if self.journal is not None and outbox is not None and hasattr(outbox, "hold"):
+                guard = outbox.hold()
+            with guard:
+                tx = outbox.prepare(event) if self.journal is not None and outbox is not None else None
+                if tx:
+                    _maybe_crash(self, "after-outbox-prepare")
+                old_enabled = rec["enabled"]
+                old_changes = rec.get("enablementChangeIds")
+                # A PREPARED transaction may have persisted its business change before
+                # its outbox marker was written. Keep its evidence until it is closed.
+                # With no outbox available, preserve legacy evidence conservatively.
+                if outbox is not None:
+                    open_ids = {
+                        (row.get("event") or {}).get("payload", {}).get("changeId")
+                        for row in outbox.list_open(tenant_id=tenant_id)
+                        if row.get("aggregateType") == "Operator"
+                        and row.get("aggregateId") == operator_id
+                        and (row.get("event") or {}).get("event_type") == "identity.operator_enabled"
+                    }
+                    changes = [item for item in (old_changes or []) if item in open_ids]
                 else:
-                    rec["enablementChangeIds"] = old_changes
-                raise
-            if tx and outbox is not None:
-                outbox.mark_business_committed(tx["txId"])
-                _maybe_crash(self, "after-business-persist")
-            if self.journal is not None:
-                self.journal.append(**event)
-            if tx and outbox is not None:
-                outbox.complete(tx["txId"])
-                _maybe_crash(self, "after-outbox-complete")
-            return rec
+                    changes = list(old_changes or [])
+                if tx:
+                    changes.append(change_id)
+                rec["enabled"] = bool(enabled)
+                if changes:
+                    rec["enablementChangeIds"] = changes
+                else:
+                    rec.pop("enablementChangeIds", None)
+                try:
+                    self.persist()
+                except Exception:
+                    rec["enabled"] = old_enabled
+                    if old_changes is None:
+                        rec.pop("enablementChangeIds", None)
+                    else:
+                        rec["enablementChangeIds"] = old_changes
+                    raise
+                if tx and outbox is not None:
+                    outbox.mark_business_committed(tx["txId"])
+                    _maybe_crash(self, "after-business-persist")
+                if self.journal is not None:
+                    self.journal.append(**event)
+                if tx and outbox is not None:
+                    outbox.complete(tx["txId"])
+                    _maybe_crash(self, "after-outbox-complete")
+                return rec
 
     def get_operator(self, operator_id: str, *, tenant_id: str) -> dict[str, Any]:
         rec = self.operators[operator_id]

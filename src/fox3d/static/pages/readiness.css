@@ -48,4 +48,6 @@ body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 "Noto Sans TC"
 .rd-tag.lbl-IMPORTED{background:var(--mock-soft);color:var(--mock)}
 .rd-out{margin:8px 0 0;max-height:320px;overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 .rd-section:target{outline:2px solid var(--accent);outline-offset:2px}
+#rd-history-table,#rd-approvals-table,#rd-snap-table{overflow-x:auto;max-width:100%;min-width:0}
+#rd-history-table .rd-table th,#rd-history-table .rd-table td,#rd-approvals-table .rd-table th,#rd-approvals-table .rd-table td,#rd-snap-table .rd-table th,#rd-snap-table .rd-table td{white-space:normal;overflow-wrap:anywhere}
 @media (min-width:560px){.rd-form-grid{grid-template-columns:1fr 1fr}.rd-form-grid .rd-field:has(textarea){grid-column:1/-1}}

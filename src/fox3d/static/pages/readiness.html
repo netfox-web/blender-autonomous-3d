@@ -23,9 +23,11 @@
       <a href="#rd-kpi">KPI</a>
       <a href="#rd-evidence">證據驗證</a>
       <a href="#rd-release">放行推進</a>
+      <a href="#rd-history">放行歷史</a>
       <a href="#rd-safety">安全評估</a>
       <a href="#physical-os">實體作業 OS</a>
       <a href="#commerce">電商匯入</a>
+      <a href="#rd-snapshots">電商快照</a>
     </nav>
 
     <div id="rd-notice" class="rd-notice" role="status" aria-live="polite" hidden></div>
@@ -90,6 +92,26 @@
       <pre id="rd-rel-out" class="rd-out" hidden></pre>
     </section>
 
+    <section id="rd-history" class="rd-section" aria-labelledby="rd-h-history">
+      <div class="rd-sec-head">
+        <h2 id="rd-h-history">放行歷史</h2>
+        <button type="button" class="rd-btn" id="rd-history-reload">重新查詢</button>
+      </div>
+      <p class="rd-muted">只讀查詢此租戶的放行事件（含封存）與目前核准。過期或封鎖會標成已過期、已封鎖，不會標成已放行。</p>
+      <label class="rd-field">實體 ID（空白表示全部）
+        <input id="rd-history-entity" spellcheck="false" aria-label="放行歷史實體 ID">
+      </label>
+      <p id="rd-history-status" class="rd-muted">載入中…</p>
+      <div class="rd-table-wrap" id="rd-history-table" hidden></div>
+      <div class="rd-actions">
+        <button type="button" class="rd-btn" id="rd-history-prev">上一頁</button>
+        <button type="button" class="rd-btn" id="rd-history-next">下一頁</button>
+      </div>
+      <h3 class="rd-sub">目前核准</h3>
+      <p id="rd-approvals-status" class="rd-muted">載入中…</p>
+      <div class="rd-table-wrap" id="rd-approvals-table" hidden></div>
+    </section>
+
     <section id="rd-safety" class="rd-section" aria-labelledby="rd-h-safety">
       <h2 id="rd-h-safety">產品安全評估</h2>
       <div class="rd-form-grid">
@@ -120,8 +142,14 @@
       <div class="rd-table-wrap" id="rd-families-table" hidden></div>
       <div class="rd-table-wrap" id="rd-phys-ready-table" hidden></div>
       <h3 class="rd-sub">人工核准閘門</h3>
+      <p id="rd-phys-entity-hint" class="rd-muted">請從下方下拉選單選擇已建立之商品，或直接輸入該租戶已建立之實體 ID。</p>
       <div class="rd-form-grid">
-        <label class="rd-field">產品／實體 ID <input id="rd-phys-entity" value="phys-demo-1" spellcheck="false"></label>
+        <label class="rd-field">從已建立商品選擇
+          <select id="rd-phys-entity-select" aria-label="已建立商品清單">
+            <option value="">— 請選擇已建立之商品／實體 —</option>
+          </select>
+        </label>
+        <label class="rd-field">產品／實體 ID <input id="rd-phys-entity" value="" placeholder="請選擇商品或輸入已建立之實體 ID" spellcheck="false"></label>
         <label class="rd-field">種類 <input id="rd-phys-kind" value="product" spellcheck="false"></label>
       </div>
       <div class="rd-actions">
@@ -168,6 +196,23 @@
         <button type="button" class="rd-btn" id="rd-com-cancel">取消</button>
       </div>
       <pre id="rd-com-out" class="rd-out" hidden></pre>
+    </section>
+
+    <section id="rd-snapshots" class="rd-section" aria-labelledby="rd-h-snapshots">
+      <div class="rd-sec-head">
+        <h2 id="rd-h-snapshots">電商有效快照</h2>
+        <button type="button" class="rd-btn" id="rd-snap-reload">重新查詢</button>
+      </div>
+      <p class="rd-muted">列出此租戶目前有效的材料、五金、包材、物流與匯率快照。空白時間表示以現在判斷。</p>
+      <label class="rd-field">有效時間 at（可空白）
+        <input id="rd-snap-at" spellcheck="false" aria-label="快照有效時間" placeholder="2026-11-19T00:00:00+00:00">
+      </label>
+      <p id="rd-snap-status" class="rd-muted">載入中…</p>
+      <div class="rd-table-wrap" id="rd-snap-table" hidden></div>
+      <div class="rd-actions">
+        <button type="button" class="rd-btn" id="rd-snap-prev">上一頁</button>
+        <button type="button" class="rd-btn" id="rd-snap-next">下一頁</button>
+      </div>
     </section>
   </main>
 </body>

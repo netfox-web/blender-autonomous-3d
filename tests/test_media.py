@@ -403,3 +403,16 @@ def test_keyframes_tolerates_missing_camera_or_product(objects):
 def test_retail_unknown_kind_defaults_to_store(kind):
     result = RetailEngine().propose(space={"kind": kind}, brand="brand", skus=[], count=1)
     assert result["kind"] == "STORE"
+
+
+def test_long_safe_name_uses_digest_only_past_the_dam_budget():
+    fitting = "U" * _MAX_ENCODED_COMPONENT_BYTES
+    assert safe_path_component(fitting) == fitting
+    overflowing = fitting + "U"
+    encoded = safe_path_component(overflowing)
+    assert encoded == "enc~=" + hashlib.sha256(overflowing.encode("utf-8")).hexdigest()
+    assert len(f"{'3' * 36}_{encoded}.glb".encode("utf-8")) <= 255
+    assert safe_path_component("U" * 300) != encoded
+    escaped_long = "enc~" + "U" * _MAX_ENCODED_COMPONENT_BYTES
+    assert safe_path_component(escaped_long).startswith("enc~=")
+    assert safe_path_component(escaped_long) != safe_path_component(fitting)

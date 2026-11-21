@@ -32,6 +32,8 @@ WO_STATES = (
 )
 TERMINAL = frozenset({"COMPLETED", "REJECTED", "CANCELLED"})
 STRICT_STOCK = "STRICT_STOCK"
+PACKING_MISMATCH = "PACKING_MISMATCH"
+PACKING_MISMATCH_SOURCE = "CARTON_MEASURED"
 FIXTURE_AUTO_SEED = "FIXTURE_AUTO_SEED"
 TRANSITIONS = {
     "DRAFT": frozenset({"RELEASED_FOR_MANUAL_EXECUTION", "CANCELLED", "REJECTED"}),
@@ -77,6 +79,7 @@ class WorkOrderService:
             self.root.mkdir(parents=True, exist_ok=True)
         self.dispatcher: Any | None = None
         self.qc: Any | None = None
+        self.logistics: Any | None = None
         self.journal: Any | None = None
         self.outbox: Any | None = None
         self.orders: dict[str, dict[str, Any]] = {}
@@ -583,22 +586,37 @@ class WorkOrderService:
         return rec
 
     def set_packing(self, work_order_id: str, carton_ids: list[str]) -> dict[str, Any]:
-        rec = self._require(work_order_id, tenant_id=None)
-        rec["lineage"]["package"] = list(carton_ids)
-        rec["cartonIds"] = list(carton_ids)
-        if rec["state"] not in TERMINAL:
+        with self._lock, self.logistics._lock if self.logistics is not None else nullcontext():
+            rec = self._require(work_order_id, tenant_id=None)
+            ids = list(carton_ids)
+            if (
+                rec.get("cartonIds") == ids
+                and rec.get("lineage", {}).get("package") == ids
+                and (rec["state"] == "PACKING" or rec["state"] in TERMINAL)
+            ):
+                return rec
             self._transition(rec, "PACKING", actor="ops", reason="packing")
-        self.persist()
-        return rec
+            rec["lineage"]["package"] = ids
+            rec["cartonIds"] = ids
+            self.persist()
+            return rec
 
     def complete(self, work_order_id: str, *, actor: str, qc_ok: bool = True) -> dict[str, Any]:
+        with self._lock, self.logistics._lock if self.logistics is not None else nullcontext():
+            if self.qc is not None:
+                self.qc.recover_pending()
+            return self._complete_locked(work_order_id, actor=actor, qc_ok=qc_ok)
+
+    def _complete_locked(self, work_order_id: str, *, actor: str, qc_ok: bool) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
         self._assert_release_fresh(rec, allow_bound_finish=True)
         if rec["state"] == "COMPLETED":
             return rec
-        if rec["state"] in {"REJECTED"}:
-            raise PermissionError("cannot complete rejected work order")
+        if rec["state"] in {"REJECTED", "CANCELLED"}:
+            raise PermissionError(f"cannot complete {rec['state'].lower()} work order")
         open_holds = [h for h in rec.get("holds") or [] if h.get("open") and h.get("blocking")]
+        if any(h.get("reason") == PACKING_MISMATCH for h in open_holds):
+            raise PermissionError("尺寸不符待人工確認 (mismatchHold)")
         if open_holds:
             raise PermissionError("blocking hold prevents completion")
         open_ops = [o for o in rec.get("ops") or [] if o.get("status") != "COMPLETED"]
@@ -626,6 +644,13 @@ class WorkOrderService:
             raise PermissionError(f"required operations incomplete: {missing_ops}")
         if rec.get("packingRequired") and not rec.get("cartonIds"):
             raise PermissionError("packing required before completion")
+        if self.logistics is not None:
+            sig = self._packing_mismatch_signature(rec)
+            if sig is not None and not self._packing_mismatch_resolved(rec, sig):
+                self.sync_packing_mismatch(work_order_id, actor=actor)
+                raise PermissionError("尺寸不符待人工確認 (mismatchHold)")
+        if rec.get("mismatchHold"):
+            raise PermissionError("尺寸不符待人工確認 (mismatchHold)")
         rec["completedBy"] = actor
         rec["completedAt"] = _now()
         self._transition(rec, "COMPLETED", actor=actor, reason="complete")
@@ -642,6 +667,62 @@ class WorkOrderService:
         )
         return rec
 
+    def _packing_mismatch_signature(self, rec: dict[str, Any]) -> str | None:
+        """Hash of the currently out-of-tolerance cartons (id + measurement seq), or None."""
+        if self.logistics is None:
+            return None
+        with self.logistics._lock:
+            rows = sorted(
+                [str(c.get("cartonId")), int(c.get("measureSeq") or 0)]
+                for c in list(self.logistics.cartons.values())
+                if c.get("workOrderId") == rec["workOrderId"]
+                and c.get("tenantId") == rec.get("tenantId")
+                and bool(c.get("mismatch"))
+            )
+        return stable_hash(rows) if rows else None
+
+    @staticmethod
+    def _packing_mismatch_resolved(rec: dict[str, Any], sig: str) -> bool:
+        """A closed PACKING_MISMATCH hold covers this mismatch (manual holds carry no signature)."""
+        return any(
+            h.get("reason") == PACKING_MISMATCH
+            and not h.get("open")
+            and h.get("mismatchSignature") in (None, sig)
+            for h in rec.get("holds") or []
+        )
+
+    def sync_packing_mismatch(self, work_order_id: str, *, actor: str) -> bool:
+        """Open (or retarget) one blocking PACKING_MISMATCH hold while cartons are out of tolerance.
+
+        Returns the work order ``mismatchHold`` flag: an open PACKING_MISMATCH hold exists, or a
+        carton is out of tolerance and no closed hold covers that measurement.
+        """
+        with self._lock, self.logistics._lock if self.logistics is not None else nullcontext():
+            rec = self._require(work_order_id, tenant_id=None)
+            sig = self._packing_mismatch_signature(rec)
+            holds = rec.setdefault("holds", [])
+            auto_open = [
+                h for h in holds if h.get("open") and h.get("reason") == PACKING_MISMATCH and h.get("source") == PACKING_MISMATCH_SOURCE
+            ]
+            if sig is not None and not any(
+                h.get("reason") == PACKING_MISMATCH and h.get("mismatchSignature") == sig for h in holds
+            ):
+                if auto_open:
+                    auto_open[0]["mismatchSignature"] = sig
+                elif rec["state"] not in TERMINAL:
+                    h = self.hold(work_order_id, actor=actor, reason=PACKING_MISMATCH, blocking=True)
+                    h["source"] = PACKING_MISMATCH_SOURCE
+                    h["mismatchSignature"] = sig
+            elif sig is None:
+                # Re-measured within tolerance: close only holds this sync opened itself.
+                for h in auto_open:
+                    self.resolve_hold(work_order_id, h["holdId"], actor=actor)
+            open_pm = any(h.get("open") and h.get("reason") == PACKING_MISMATCH for h in holds)
+            flag = open_pm or (sig is not None and not self._packing_mismatch_resolved(rec, sig))
+            rec["mismatchHold"] = flag
+            self.persist()
+            return flag
+
     def _authoritative_qc_gate(self, rec: dict[str, Any]) -> dict[str, Any]:
         if self.qc is None:
             return {"ok": False, "reason": "NO_QC_AUTHORITY", "missing": ["*"], "failed": []}
@@ -656,7 +737,11 @@ class WorkOrderService:
     def reject(self, work_order_id: str, *, actor: str, reason: str) -> dict[str, Any]:
         # Same lock as dispatch / ack / start / complete so a lease cannot be
         # finished, or a station claimed, after the work order is rejected.
-        with self.dispatcher._lock if self.dispatcher is not None else nullcontext():
+        with (
+            self.dispatcher._lock if self.dispatcher is not None else nullcontext(),
+            self._lock,
+            self.logistics._lock if self.logistics is not None else nullcontext(),
+        ):
             rec = self._require(work_order_id, tenant_id=None)
             if rec["state"] in TERMINAL:
                 raise PermissionError("cannot reject terminal work order")
@@ -674,7 +759,13 @@ class WorkOrderService:
             return rec
 
     def cancel(self, work_order_id: str, *, actor: str) -> dict[str, Any]:
-        with self.dispatcher._lock if self.dispatcher is not None else nullcontext():
+        with (
+            self.dispatcher._lock if self.dispatcher is not None else nullcontext(),
+            self._lock,
+            self.logistics._lock if self.logistics is not None else nullcontext(),
+        ):
+            if self.qc is not None:
+                self.qc.recover_pending()
             rec = self._require(work_order_id, tenant_id=None)
             if rec["state"] == "CANCELLED":
                 return rec
@@ -843,58 +934,64 @@ class WorkOrderService:
         operator_id: str | None = None,
         shift_id: str | None = None,
     ) -> dict[str, Any]:
-        rec = self._require(work_order_id, tenant_id=None)
-        h = {
-            "holdId": new_id(),
-            "reason": reason,
-            "actor": actor,
-            "open": True,
-            "blocking": bool(blocking),
-            "operatorId": operator_id,
-            "shiftId": shift_id,
-            "at": _now(),
-        }
-        rec.setdefault("holds", []).append(h)
-        if blocking and rec["state"] not in TERMINAL and rec["state"] != "QC_HOLD":
-            self._transition(rec, "QC_HOLD", actor=actor, reason=f"hold:{reason}")
-        emit(
-            self,
-            "workorder.hold",
-            tenant_id=rec["tenantId"],
-            aggregate_type="WorkOrder",
-            aggregate_id=rec["workOrderId"],
-            actor=actor,
-            payload={"holdId": h["holdId"], "reason": reason, "blocking": bool(blocking)},
-            release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::hold::{rec['workOrderId']}::{h['holdId']}",
-        )
-        return h
+        with self._lock:
+            rec = self._require(work_order_id, tenant_id=None)
+            h = {
+                "holdId": new_id(),
+                "reason": reason,
+                "actor": actor,
+                "open": True,
+                "blocking": bool(blocking),
+                "operatorId": operator_id,
+                "shiftId": shift_id,
+                "at": _now(),
+            }
+            rec.setdefault("holds", []).append(h)
+            if blocking and rec["state"] not in TERMINAL and rec["state"] != "QC_HOLD":
+                self._transition(rec, "QC_HOLD", actor=actor, reason=f"hold:{reason}")
+            emit(
+                self,
+                "workorder.hold",
+                tenant_id=rec["tenantId"],
+                aggregate_type="WorkOrder",
+                aggregate_id=rec["workOrderId"],
+                actor=actor,
+                payload={"holdId": h["holdId"], "reason": reason, "blocking": bool(blocking)},
+                release_hash=rec.get("releaseHash"),
+                semantic_key=f"{rec['tenantId']}::hold::{rec['workOrderId']}::{h['holdId']}",
+            )
+            return h
 
     def resolve_hold(self, work_order_id: str, hold_id: str, *, actor: str) -> dict[str, Any]:
-        rec = self._require(work_order_id, tenant_id=None)
-        h = next(x for x in rec.get("holds") or [] if x["holdId"] == hold_id)
-        if not h.get("open"):
+        with self._lock:
+            rec = self._require(work_order_id, tenant_id=None)
+            h = next(x for x in rec.get("holds") or [] if x["holdId"] == hold_id)
+            if not h.get("open"):
+                return h
+            h["open"] = False
+            h["resolvedBy"] = actor
+            h["resolvedAt"] = _now()
+            if h.get("reason") == PACKING_MISMATCH:
+                rec["mismatchHold"] = any(
+                    x.get("open") and x.get("reason") == PACKING_MISMATCH for x in rec.get("holds") or []
+                )
+            open_blocking = [x for x in rec.get("holds") or [] if x.get("open") and x.get("blocking")]
+            if rec["state"] == "QC_HOLD" and not open_blocking:
+                gate = self._authoritative_qc_gate(rec)
+                if gate.get("ok"):
+                    self._transition(rec, "IN_PROGRESS", actor=actor, reason="hold-resolved")
+            emit(
+                self,
+                "workorder.hold_resolve",
+                tenant_id=rec["tenantId"],
+                aggregate_type="WorkOrder",
+                aggregate_id=rec["workOrderId"],
+                actor=actor,
+                payload={"holdId": hold_id},
+                release_hash=rec.get("releaseHash"),
+                semantic_key=f"{rec['tenantId']}::hold-resolve::{hold_id}",
+            )
             return h
-        h["open"] = False
-        h["resolvedBy"] = actor
-        h["resolvedAt"] = _now()
-        open_blocking = [x for x in rec.get("holds") or [] if x.get("open") and x.get("blocking")]
-        if rec["state"] == "QC_HOLD" and not open_blocking:
-            gate = self._authoritative_qc_gate(rec)
-            if gate.get("ok"):
-                self._transition(rec, "IN_PROGRESS", actor=actor, reason="hold-resolved")
-        emit(
-            self,
-            "workorder.hold_resolve",
-            tenant_id=rec["tenantId"],
-            aggregate_type="WorkOrder",
-            aggregate_id=rec["workOrderId"],
-            actor=actor,
-            payload={"holdId": hold_id},
-            release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::hold-resolve::{hold_id}",
-        )
-        return h
 
     def authorize_rework(
         self,

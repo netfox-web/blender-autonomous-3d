@@ -227,7 +227,11 @@ def test_logistics_conservation_dimweight_pallet_label():
     assert pal["label"] == "PLANNING"
     req = log.shipping_request(origin="TW", destination="TW-TPE", carton_ids=[c["cartonId"] for c in cartons])
     assert req["submittedToCarrier"] is False
-    q = log.import_carrier_quote({"carrier": "X", "service": "ground", "charge": 220, "dimDivisor": 6000}, source="IMPORTED")
+    q = log.import_carrier_quote(
+        {"carrier": "X", "service": "ground", "charge": 220, "dimDivisor": 6000},
+        source="IMPORTED",
+        tenant_id="t",
+    )
     assert q["truthLabel"] == "IMPORTED"
     assert log.quote_stale(q, service="air") is True
     label = log.label_payload(cartons[0]["cartonId"])

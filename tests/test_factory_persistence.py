@@ -451,6 +451,20 @@ def test_restart_restores_parametric_products_and_revision(tmp_path: Path) -> No
     assert again.status_code == 200
 
 
+def test_parametric_snapshot_does_not_walk_the_live_dictionary(tmp_path: Path) -> None:
+    class ConcurrentParametrics(dict):
+        def items(self):
+            for item in super().items():
+                yield item
+                self["later-product"] = {"spec": {"tenantId": "tenant-a"}}
+
+    plat = Platform(root=tmp_path / "data", mock_blender=True)
+    record = {"spec": {"tenantId": "tenant-a"}}
+    plat.parametrics = ConcurrentParametrics({"original": record})
+
+    assert plat.factory._snapshot_payload()["parametrics"] == {"original": record}
+
+
 def test_quote_list_returns_newest_when_over_limit(tmp_path: Path) -> None:
     root = tmp_path / "data"
     plat = Platform(root=root, mock_blender=True)

@@ -9,14 +9,25 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Iterator, Protocol, cast
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.release import (
+    can_unlink_canonical_tenant_file,
+    can_unlink_migrated_legacy_file,
+    conflicting_legacy_owner_at_path,
+    is_matching_tenant_stem,
+    legacy_safe_tenant_filename,
+    order_tenants_for_migration,
+    safe_tenant_filename,
+    sorted_tenant_json_paths,
+)
 from fox3d.storelock import CrashInjected, FileLock, StaleGeneration
 
 QUALITY_STATES = ("available", "reserved", "consumed", "quarantined", "damaged")
@@ -35,13 +46,10 @@ def _now_iso() -> str:
     return utcnow().isoformat()
 
 
-def atomic_write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+def _replace_with_retry(src: Path, dst: Path) -> None:
     for attempt in range(6):
         try:
-            tmp.replace(path)
+            src.replace(dst)
             return
         except PermissionError:
             if attempt == 5:
@@ -49,10 +57,39 @@ def atomic_write_json(path: Path, payload: Any) -> None:
             time.sleep(0.02 * (2 ** attempt))
 
 
+def atomic_write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{new_id()}.tmp")
+    text = json.dumps(payload, indent=2, default=str)
+    owned = False
+    try:
+        with tmp.open("x", encoding="utf-8") as fh:
+            owned = True
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        _replace_with_retry(tmp, path)
+        owned = False
+    finally:
+        if owned and tmp.exists():
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def read_json(path: Path) -> Any:
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    for attempt in range(6):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            if sys.platform != "win32" or attempt == 5:
+                raise
+            time.sleep(0.02 * (2 ** attempt))
 
 
 def normalize_status(status: str | None) -> str:
@@ -143,12 +180,116 @@ class DurableRemnantStore:
         return self.root / "remnants.lock"
 
     def _normalize_tenant(self, tenant_id: str | None) -> str:
-        return str(tenant_id or "default")
+        tid = str(tenant_id or "default").strip()
+        return tid or "default"
+
+    def _legacy_tenant_path(self, tenant_id: str) -> Path:
+        tid = self._normalize_tenant(tenant_id)
+        return self.root / f"{legacy_safe_tenant_filename(tid)}.json"
 
     def _tenant_path(self, tenant_id: str) -> Path:
         tid = self._normalize_tenant(tenant_id)
-        safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tid)
-        return self.root / f"{safe}.json"
+        return self.root / f"{safe_tenant_filename(tid)}.json"
+
+    def _find_legacy_paths(self, tenant_id: str) -> list[Path]:
+        tid = self._normalize_tenant(tenant_id)
+        canonical = self._tenant_path(tid)
+        direct = self._legacy_tenant_path(tid)
+        candidates: list[Path] = []
+        if direct != canonical and direct.is_file():
+            candidates.append(direct)
+        want_lower = legacy_safe_tenant_filename(tid).lower()
+        for p in sorted(self.root.glob("*.json")):
+            if p == canonical or p in candidates:
+                continue
+            if p.stem.lower() == want_lower:
+                candidates.append(p)
+        return candidates
+
+    def _evacuate_occupying_legacy_at(
+        self, path: Path, expected_tid: str, *, _visited: set[str] | None = None
+    ) -> None:
+        occ_tid = conflicting_legacy_owner_at_path(path, expected_tid)
+        if occ_tid is None:
+            return
+        occ_canon = self._tenant_path(occ_tid)
+        if occ_canon == path:
+            return
+        if _visited is not None and occ_tid in _visited:
+            return
+        seen = set(_visited) if _visited is not None else set()
+        seen.add(expected_tid)
+        seen.add(occ_tid)
+        self._evacuate_occupying_legacy_at(occ_canon, occ_tid, _visited=seen)
+        if not occ_canon.exists():
+            self._migrate_legacy_file_for_tenant(path, occ_tid)
+        elif can_unlink_migrated_legacy_file(path, occ_tid, self._tenant_path):
+            path.unlink(missing_ok=True)
+
+    def _migrate_legacy_file_for_tenant(self, legacy_path: Path, tenant_id: str) -> bool:
+        if not legacy_path.exists():
+            return False
+        payload = read_json(legacy_path)
+        if not isinstance(payload, dict):
+            return False
+        tid = self._normalize_tenant(tenant_id)
+        raw_header_tid = payload.get("tenantId")
+        header_tid = (
+            self._normalize_tenant(raw_header_tid)
+            if isinstance(raw_header_tid, str) and raw_header_tid.strip()
+            else None
+        )
+        if header_tid is not None and self._tenant_path(header_tid) == legacy_path:
+            return False
+        raw_items = payload.get("items") or []
+        if not isinstance(raw_items, list):
+            return False
+        matched_items: list[dict[str, Any]] = []
+        foreign_items: list[dict[str, Any]] = []
+        for rec in raw_items:
+            if not isinstance(rec, dict) or "remnantId" not in rec:
+                continue
+            raw_rec_tid = rec.get("tenantId")
+            rec_tid = (
+                self._normalize_tenant(raw_rec_tid)
+                if isinstance(raw_rec_tid, str) and raw_rec_tid.strip()
+                else header_tid
+            )
+            if rec_tid is None:
+                continue
+            item_copy = dict(rec)
+            item_copy["tenantId"] = rec_tid
+            if rec_tid == tid:
+                matched_items.append(item_copy)
+            else:
+                foreign_items.append(item_copy)
+        if not matched_items and header_tid != tid:
+            return False
+        for rid in [
+            k
+            for k, r in self._items.items()
+            if self._normalize_tenant(r.get("tenantId")) == tid
+        ]:
+            self._items.pop(rid, None)
+        for rec in matched_items:
+            self._items[rec["remnantId"]] = rec
+        self._persist_tenant(tid)
+        if foreign_items:
+            rem_tid = self._normalize_tenant(foreign_items[0].get("tenantId"))
+            atomic_write_json(
+                legacy_path,
+                {
+                    "tenantId": rem_tid,
+                    "kind": payload.get("kind") or "remnant-store",
+                    "count": len(foreign_items),
+                    "items": foreign_items,
+                },
+            )
+        elif can_unlink_migrated_legacy_file(
+            legacy_path, tid, self._tenant_path, {self._tenant_path(tid)}
+        ):
+            legacy_path.unlink(missing_ok=True)
+        return True
 
     def _sync_file(self, path: Path) -> None:
         if not path.exists():
@@ -170,7 +311,15 @@ class DurableRemnantStore:
                 tid = self._normalize_tenant(tenant_id)
                 if self._tx_depth > 0 and (self._tx_synced_all or tid in self._tx_synced_tenants):
                     return
-                self._sync_file(self._tenant_path(tid))
+                path = self._tenant_path(tid)
+                self._evacuate_occupying_legacy_at(path, tid)
+                if not path.exists():
+                    for legacy in self._find_legacy_paths(tid):
+                        if self._migrate_legacy_file_for_tenant(legacy, tid):
+                            if self._tx_depth > 0:
+                                self._tx_synced_tenants.add(tid)
+                            return
+                self._sync_file(path)
                 if self._tx_depth > 0:
                     self._tx_synced_tenants.add(tid)
                 return
@@ -215,26 +364,95 @@ class DurableRemnantStore:
     def load(self) -> None:
         with self._lock:
             self._items.clear()
-            for path in sorted(self.root.glob("*.json")):
+            canonical_by_tenant: dict[str, dict[str, dict[str, Any]]] = {}
+            legacy_by_tenant: dict[str, dict[str, dict[str, Any]]] = {}
+            legacy_to_cleanup: list[tuple[Path, str]] = []
+            for path in sorted_tenant_json_paths(self.root):
                 payload = read_json(path) or {}
-                for rec in (payload.get("items") or []):
-                    self._items[rec["remnantId"]] = rec
+                if not isinstance(payload, dict):
+                    continue
+                raw_tid = payload.get("tenantId")
+                header_tid = (
+                    self._normalize_tenant(raw_tid)
+                    if isinstance(raw_tid, str) and raw_tid.strip()
+                    else None
+                )
+                if header_tid is not None and not is_matching_tenant_stem(header_tid, path.stem):
+                    continue
+                is_canonical = header_tid is not None and self._tenant_path(header_tid) == path
+                default_tid = header_tid or "default"
+                if is_canonical and header_tid is not None:
+                    slot = canonical_by_tenant.setdefault(header_tid, {})
+                    for rec in (payload.get("items") or []):
+                        if not isinstance(rec, dict) or "remnantId" not in rec:
+                            continue
+                        rid = rec["remnantId"]
+                        rec_tid = self._normalize_tenant(rec.get("tenantId") or default_tid)
+                        rec.setdefault("tenantId", rec_tid)
+                        existing = slot.get(rid)
+                        if existing is None or int(rec.get("version") or 1) >= int(existing.get("version") or 1):
+                            slot[rid] = rec
+                else:
+                    file_tids: set[str] = set()
+                    if header_tid is not None:
+                        file_tids.add(header_tid)
+                    for rec in (payload.get("items") or []):
+                        if not isinstance(rec, dict) or "remnantId" not in rec:
+                            continue
+                        rid = rec["remnantId"]
+                        rec_tid = self._normalize_tenant(rec.get("tenantId") or default_tid)
+                        rec.setdefault("tenantId", rec_tid)
+                        file_tids.add(rec_tid)
+                        slot = legacy_by_tenant.setdefault(rec_tid, {})
+                        existing = slot.get(rid)
+                        if existing is None or int(rec.get("version") or 1) >= int(existing.get("version") or 1):
+                            slot[rid] = rec
+                    for ftid in sorted(file_tids or {default_tid}):
+                        legacy_to_cleanup.append((path, ftid))
+            tenants_to_persist: set[str] = set()
+            all_tids = sorted(set(canonical_by_tenant) | set(legacy_by_tenant))
+            for tid in all_tids:
+                if tid in canonical_by_tenant:
+                    self._items.update(canonical_by_tenant[tid])
+                else:
+                    self._items.update(legacy_by_tenant[tid])
+                    tenants_to_persist.add(tid)
+            for tid in order_tenants_for_migration(
+                tenants_to_persist, legacy_to_cleanup, self._tenant_path
+            ):
+                self._persist_tenant(tid)
+            protected_paths = {
+                self._tenant_path(t) for t in (set(canonical_by_tenant) | tenants_to_persist)
+            }
+            for legacy_path, tid in legacy_to_cleanup:
+                if can_unlink_migrated_legacy_file(
+                    legacy_path, tid, self._tenant_path, protected_paths
+                ):
+                    legacy_path.unlink(missing_ok=True)
 
     def _persist_tenant(self, tenant_id: str) -> None:
         tid = self._normalize_tenant(tenant_id)
+        path = self._tenant_path(tid)
+        occ_tid = conflicting_legacy_owner_at_path(path, tid)
+        if (
+            occ_tid is not None
+            and self._tenant_path(occ_tid) != path
+            and not self._tenant_path(occ_tid).exists()
+        ):
+            self._evacuate_occupying_legacy_at(path, tid)
         items = [
             rec
             for rec in self._items.values()
             if self._normalize_tenant(rec.get("tenantId")) == tid
         ]
-        path = self._tenant_path(tid)
         if items:
             atomic_write_json(
                 path,
                 {"tenantId": tid, "kind": "remnant-store", "count": len(items), "items": items},
             )
         else:
-            path.unlink(missing_ok=True)
+            if can_unlink_canonical_tenant_file(path, tid):
+                path.unlink(missing_ok=True)
 
     def persist(self, *, tenant_id: str | None = None) -> None:
         with self._lock:
@@ -371,40 +589,44 @@ class MaterialLotRegistry:
         self._pending_audit = []
         txs: list[dict[str, Any]] = []
         outbox = self.outbox
-        if self.journal is not None and outbox is not None and pending:
-            for ev in pending:
-                txs.append(outbox.prepare(ev, expected_generation=self._tx_expected))
-            if self._fail_after_prepare:
-                self._fail_after_prepare = False
-                from fox3d.journal import JournalCommitError
+        guard: AbstractContextManager[None] = nullcontext()
+        if self.journal is not None and outbox is not None and pending and hasattr(outbox, "hold"):
+            guard = outbox.hold()
+        with guard:
+            if self.journal is not None and outbox is not None and pending:
+                for ev in pending:
+                    txs.append(outbox.prepare(ev, expected_generation=self._tx_expected))
+                if self._fail_after_prepare:
+                    self._fail_after_prepare = False
+                    from fox3d.journal import JournalCommitError
 
-                raise JournalCommitError("injected prepare-then-business-fail")
-            self._die("after-prepare")
-        self.persist(expected_generation=self._tx_expected)
-        if outbox is not None:
-            for tx in txs:
-                outbox.mark_business_committed(tx["txId"], observed_generation=self.generation)
-        self._die("after-business")
-        if self.journal is not None:
-            if self._fail_journal_finalize:
-                self._fail_journal_finalize = False
-                from fox3d.journal import JournalCommitError
-
-                raise JournalCommitError("injected journal finalize failure")
-            for ev in pending:
-                self.journal.append(
-                    ev["event_type"],
-                    tenant_id=ev["tenant_id"],
-                    aggregate_type=ev["aggregate_type"],
-                    aggregate_id=ev["aggregate_id"],
-                    actor=ev["actor"],
-                    payload=ev["payload"],
-                    semantic_key=ev.get("semantic_key"),
-                    source=ev.get("source"),
-                )
+                    raise JournalCommitError("injected prepare-then-business-fail")
+                self._die("after-prepare")
+            self.persist(expected_generation=self._tx_expected)
             if outbox is not None:
                 for tx in txs:
-                    outbox.complete(tx["txId"])
+                    outbox.mark_business_committed(tx["txId"], observed_generation=self.generation)
+            self._die("after-business")
+            if self.journal is not None:
+                if self._fail_journal_finalize:
+                    self._fail_journal_finalize = False
+                    from fox3d.journal import JournalCommitError
+
+                    raise JournalCommitError("injected journal finalize failure")
+                for ev in pending:
+                    self.journal.append(
+                        ev["event_type"],
+                        tenant_id=ev["tenant_id"],
+                        aggregate_type=ev["aggregate_type"],
+                        aggregate_id=ev["aggregate_id"],
+                        actor=ev["actor"],
+                        payload=ev["payload"],
+                        semantic_key=ev.get("semantic_key"),
+                        source=ev.get("source"),
+                    )
+                if outbox is not None:
+                    for tx in txs:
+                        outbox.complete(tx["txId"])
 
     def _emit(self, event_type: str, *, tenant_id: str, aggregate_id: str, actor: str, payload: dict[str, Any], semantic_key: str | None = None) -> None:
         if self.journal is None:
@@ -457,7 +679,7 @@ class MaterialLotRegistry:
             self._crash_before_commit = False
             self._die("after-staging")
             raise CrashInjected("before commit")
-        staging.replace(path)
+        _replace_with_retry(staging, path)
         self.generation = disk_gen + 1
 
     def create(
@@ -849,13 +1071,37 @@ class MaterialLotRegistry:
             )
             return rec
 
-    def apply_counted_available(self, lot_id: str, *, tenant_id: str, counted: int, actor: str, reason: str) -> dict[str, Any]:
+    def apply_counted_available(
+        self,
+        lot_id: str,
+        *,
+        tenant_id: str,
+        counted: int,
+        actor: str,
+        reason: str,
+        expect_available: int | None = None,
+        expect_reserved: int | None = None,
+        expect_consumed: int | None = None,
+        cycle_count_id: str | None = None,
+    ) -> dict[str, Any]:
         """Set available sheets to a counted value. Does not rewrite consumed/reserved."""
         qty = int(counted)
         if qty < 0:
             raise PermissionError("counted quantity cannot be negative")
         with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
+            if cycle_count_id and any(a.get("cycleCountId") == cycle_count_id for a in rec.get("adjustments", [])):
+                return rec
+            if expect_available is not None:
+                book = self.quantities(lot_id, tenant_id=tenant_id)
+                if (
+                    int(book["available"]) != int(expect_available)
+                    or int(book["reserved"]) != int(expect_reserved or 0)
+                    or int(book["consumed"]) != int(expect_consumed or 0)
+                ):
+                    from fox3d.cyclecount import BOOK_CHANGED_MSG, CycleCountConflict
+
+                    raise CycleCountConflict(BOOK_CHANGED_MSG)
             reserved = int(rec.get("reservedSheets") or 0)
             consumed = int(rec.get("consumedSheets") or 0)
             rec["remainingSheets"] = qty
@@ -865,6 +1111,8 @@ class MaterialLotRegistry:
             rec.setdefault("adjustments", []).append(
                 {
                     "adjustmentId": adj_id,
+                    "cycleCountId": cycle_count_id,
+                    "after": self.quantities(lot_id, tenant_id=tenant_id),
                     "actor": actor,
                     "reason": reason,
                     "source": "CYCLE_COUNT",
@@ -884,9 +1132,21 @@ class MaterialLotRegistry:
             )
             return rec
 
-    def quarantine(self, lot_id: str, *, tenant_id: str, actor: str, reason: str) -> dict[str, Any]:
+    def quarantine(
+        self,
+        lot_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        reason: str,
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
         with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
+            if expected_version is not None and int(rec.get("version") or 1) != int(expected_version):
+                raise PermissionError("stale lot version")
+            if rec.get("quarantined") or rec.get("qualityState") == "QUARANTINED":
+                raise PermissionError("lot already quarantined")
             rec["quarantined"] = True
             rec["qualityState"] = "QUARANTINED"
             rec["quarantineReason"] = reason
@@ -898,7 +1158,37 @@ class MaterialLotRegistry:
                 aggregate_id=lot_id,
                 actor=actor,
                 payload={"reason": reason},
-                semantic_key=f"{tenant_id}::quarantine::{lot_id}::{reason}",
+                semantic_key=f"{tenant_id}::quarantine::{lot_id}::{reason}::{rec['version']}",
+            )
+            return rec
+
+    def release_quarantine(
+        self,
+        lot_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        reason: str,
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
+        with self._transaction():
+            rec = self.get(lot_id, tenant_id=tenant_id)
+            if expected_version is not None and int(rec.get("version") or 1) != int(expected_version):
+                raise PermissionError("stale lot version")
+            if not rec.get("quarantined") and rec.get("qualityState") != "QUARANTINED":
+                raise PermissionError("lot not quarantined")
+            rec["quarantined"] = False
+            rec["qualityState"] = "AVAILABLE"
+            rec["quarantineReleaseReason"] = reason
+            rec["quarantineReleasedBy"] = actor
+            rec["version"] = int(rec.get("version") or 1) + 1
+            self._emit(
+                "material.release_quarantine",
+                tenant_id=tenant_id,
+                aggregate_id=lot_id,
+                actor=actor,
+                payload={"reason": reason},
+                semantic_key=f"{tenant_id}::release-quarantine::{lot_id}::{reason}::{rec['version']}",
             )
             return rec
 

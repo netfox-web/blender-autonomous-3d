@@ -179,3 +179,102 @@ def test_independent_stores_serialize_concurrent_writes(tmp_path):
         for future in futures:
             future.result(timeout=5)
     assert set(SnapshotStore(tmp_path, kind="fx").items) == {"first", "second"}
+
+
+def test_tenant_collisions_concurrent_and_legacy_assignment(tmp_path):  # noqa: ANN001
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    (tmp_path / "fx.json").write_text(json.dumps({"items": [{"snapshotId": "old", "price": 1}]}))
+    first, second = SnapshotStore(tmp_path, kind="fx"), SnapshotStore(tmp_path, kind="fx")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda pair: pair[0].add({"snapshotId": "same", "tenantId": pair[1]}, source="MANUAL"), [(first, "a"), (second, "b")]))
+    assert len(results) == 2
+    rows = SnapshotStore(tmp_path, kind="fx").active()
+    assert {r.get("tenantId") for r in rows} == {"a", "b"}
+    assert [r["snapshotId"] for r in SnapshotStore(tmp_path, kind="fx").quarantined()] == ["old"]
+    assert first.assign_legacy(["old"], tenant_id="a") == 1
+    rows = SnapshotStore(tmp_path, kind="fx").active()
+    assert next(r for r in rows if r["snapshotId"] == "old")["tenantId"] == "a"
+    assert not SnapshotStore(tmp_path, kind="fx").quarantined()
+    with pytest.raises(ValueError):
+        second.assign_legacy(["old"], tenant_id="b")
+
+
+def test_pre_upgrade_rows_with_forged_tenant_stay_quarantined(tmp_path):  # noqa: ANN001
+    import json
+
+    # Before the upgrade the import endpoint stored the caller's tenantId verbatim, so
+    # tenant A could have written a row claiming tenant B.
+    legacy = [
+        {"snapshotId": "forged", "tenantId": "tenant-b", "price": 999, "source": "MANUAL"},
+        {"snapshotId": "plain", "price": 1, "source": "MANUAL"},
+        {"snapshotId": "wrong", "tenantId": "tenant-a", "price": 2, "source": "MANUAL"},
+    ]
+    (tmp_path / "fx.json").write_text(json.dumps({"kind": "fx", "items": legacy}))
+    store = SnapshotStore(tmp_path, kind="fx")
+    assert store.active() == []
+    assert store.active(at="2026-01-01") == []
+    for tenant in (None, "tenant-a", "tenant-b"):
+        for sid in ("forged", "plain", "wrong"):
+            assert store.get(sid, tenant_id=tenant) is None
+
+    # A later write upgrades the file; legacy rows keep no usable tenantId.
+    store.add({"snapshotId": "forged", "tenantId": "tenant-a", "price": 5}, source="MANUAL")
+    persisted = json.loads((tmp_path / "fx.json").read_text())
+    assert persisted["formatVersion"] == 2
+    assert [r["snapshotId"] for r in persisted["items"]] == ["forged"]
+    assert {r["snapshotId"]: r.get("tenantId") for r in persisted["legacyItems"]} == {"forged": None, "plain": None, "wrong": None}
+    assert {r["snapshotId"]: r.get("claimedTenantId") for r in persisted["legacyItems"]}["forged"] == "tenant-b"
+    reloaded = SnapshotStore(tmp_path, kind="fx")
+    assert reloaded.get("forged", tenant_id="tenant-b") is None
+    assert reloaded.get("forged", tenant_id="tenant-a")["price"] == 5
+    assert [r["snapshotId"] for r in reloaded.active()] == ["forged"]
+
+    # A row that claims a tenantId in legacyItems is still not trusted.
+    persisted["legacyItems"][0]["tenantId"] = "tenant-b"
+    (tmp_path / "fx.json").write_text(json.dumps(persisted))
+    assert SnapshotStore(tmp_path, kind="fx").get("forged", tenant_id="tenant-b") is None
+
+    # Only the trusted maintenance step opens a row, to the independently verified owner.
+    assert reloaded.assign_legacy(["wrong"], tenant_id="tenant-b") == 1
+    opened = SnapshotStore(tmp_path, kind="fx")
+    assert opened.get("wrong", tenant_id="tenant-b")["price"] == 2
+    assert opened.get("wrong", tenant_id="tenant-a") is None
+    with pytest.raises(ValueError):
+        opened.assign_legacy(["forged"], tenant_id="tenant-a")  # destination exists
+    with pytest.raises(ValueError):
+        opened.assign_legacy(["missing"], tenant_id="tenant-a")
+    with pytest.raises(ValueError):
+        opened.assign_legacy(["plain"], tenant_id="")
+    assert {r["snapshotId"] for r in opened.quarantined()} == {"forged", "plain"}
+
+
+def test_unkeyed_legacy_rows_survive_rewrite(tmp_path):  # noqa: ANN001
+    import json
+
+    (tmp_path / "fx.json").write_text(json.dumps({"items": [{"price": 1}, "junk"]}))
+    store = SnapshotStore(tmp_path, kind="fx")
+    assert store.active() == []
+    store.add({"snapshotId": "new", "tenantId": "a"}, source="MANUAL")
+    persisted = json.loads((tmp_path / "fx.json").read_text())
+    assert persisted["legacyItems"] == [{"price": 1}, "junk"]
+
+
+def test_snapshot_get_rejects_bad_keys():
+    store = SnapshotStore(kind="fx")
+    store.add({"snapshotId": "x", "tenantId": "a"}, source="MANUAL")
+    assert store.get("x", tenant_id="a") is not None
+    assert store.get("x") is None
+    assert store.get("x", tenant_id="") is None
+    assert store.get("", tenant_id="a") is None
+    assert store.get(None, tenant_id="a") is None  # type: ignore[arg-type]
+
+
+def test_snapshot_dates_use_utc_and_inclusive_expiration():
+    store = SnapshotStore(kind="fx")
+    store.add({"snapshotId": "a", "effectiveAt": "2026-11-19T10:00:00+08:00", "expiresAt": "2026-11-19"}, source="MANUAL")
+    store.add({"snapshotId": "bad", "expiresAt": "invalid"}, source="MANUAL")
+    assert [r["snapshotId"] for r in store.active(at="2026-11-19T03:00:00+00:00")] == ["a"]
+    assert not store.active(at="2026-11-19T01:59:59Z")
+    assert not store.active(at="2026-11-20T00:00:00Z")

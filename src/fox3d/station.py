@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from typing import Any
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import JobQueue, utcnow
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.journal import emit
+from fox3d.journal import SemanticKeyConflictError, emit
 from fox3d.recovery import ExceptionInbox, PilotException
 from fox3d.storelock import FileLock
 
@@ -44,6 +45,10 @@ OP_CAPABILITY = {
     "rework": "QC_MANUAL",
 }
 LEASE_SECONDS = 120.0
+ADMIN_STATION_STATUSES = frozenset({"ACTIVE", "MAINTENANCE", "DISABLED"})
+OPERATOR_STATION_STATUSES = frozenset({"ONLINE", "OFFLINE", "PAUSED"})
+ALL_STATION_STATUSES = ADMIN_STATION_STATUSES | OPERATOR_STATION_STATUSES
+DISPATCHABLE_STATION_STATUSES = frozenset({"ONLINE", "ACTIVE"})
 
 
 def _now() -> str:
@@ -58,6 +63,9 @@ class StationRegistry:
         self.stations: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
         self.journal: Any | None = None
+        self.outbox: Any | None = None
+        self._crash_mode = ""
+        self._tx_persisted: bool = False
         self.load()
 
     def _path(self) -> Path | None:
@@ -72,14 +80,14 @@ class StationRegistry:
 
     def persist(self) -> None:
         path = self._path()
-        if not path:
-            return
-        lock = self.root / "stations.lock" if self.root else None
-        if lock:
-            with FileLock(lock):
+        if path:
+            lock = self.root / "stations.lock" if self.root else None
+            if lock:
+                with FileLock(lock):
+                    atomic_write_json(path, {"stations": list(self.stations.values())})
+            else:
                 atomic_write_json(path, {"stations": list(self.stations.values())})
-        else:
-            atomic_write_json(path, {"stations": list(self.stations.values())})
+        self._tx_persisted = True
 
     def register(
         self,
@@ -151,11 +159,149 @@ class StationRegistry:
         self.persist()
         return rec
 
-    def set_status(self, station_id: str, *, tenant_id: str, status: str) -> dict[str, Any]:
-        rec = self.get(station_id, tenant_id=tenant_id)
-        rec["status"] = status
-        self.persist()
-        return rec
+    def _status_semantic_key(self, tenant_id: str, station_id: str, transition_id: str) -> str:
+        return f"{tenant_id}::station::{station_id}::status::{transition_id}"
+
+    def _finalize_status_transition(
+        self,
+        rec: dict[str, Any],
+        *,
+        tenant_id: str,
+        transition_id: str,
+    ) -> None:
+        op = (rec.get("statusTransitions") or {}).get(transition_id)
+        if not isinstance(op, dict):
+            return
+        payload = {"status": op.get("status"), "note": op.get("note"), "transitionId": transition_id}
+        actor = str(op.get("actor") or rec.get("statusUpdatedBy") or "ops")
+        semantic_key = self._status_semantic_key(tenant_id, str(rec["stationId"]), transition_id)
+        journal = self.journal
+        if journal is not None:
+            found = (
+                journal.check_semantic_key(
+                    tenant_id=tenant_id,
+                    event_type="station.status",
+                    payload=payload,
+                    release_hash=None,
+                    semantic_key=semantic_key,
+                )
+                if hasattr(journal, "check_semantic_key")
+                else None
+            )
+            if found is None:
+                journal.append(
+                    "station.status",
+                    tenant_id=tenant_id,
+                    aggregate_type="Station",
+                    aggregate_id=str(rec["stationId"]),
+                    actor=actor,
+                    payload=payload,
+                    release_hash=None,
+                    semantic_key=semantic_key,
+                    source=actor,
+                )
+        outbox = self.outbox or (getattr(journal, "outbox", None) if journal is not None else None)
+        if outbox is not None and hasattr(outbox, "list_open"):
+            for tx in outbox.list_open(tenant_id=tenant_id):
+                if tx.get("semanticKey") == semantic_key:
+                    outbox.complete(str(tx["txId"]))
+
+    def _cleanup_uncommitted_status_txs(self, rec: dict[str, Any], *, tenant_id: str) -> None:
+        outbox = self.outbox or (getattr(self.journal, "outbox", None) if self.journal is not None else None)
+        if outbox is None or not hasattr(outbox, "list_open") or not hasattr(outbox, "abort"):
+            return
+        committed_ids = set((rec.get("statusTransitions") or {}).keys())
+        for tx in outbox.list_open(tenant_id=tenant_id):
+            ev = tx.get("event") or {}
+            if (
+                tx.get("status") == "PREPARED"
+                and tx.get("aggregateType") == "Station"
+                and tx.get("aggregateId") == rec.get("stationId")
+                and (ev.get("event_type") or ev.get("eventType")) == "station.status"
+            ):
+                tid_in_tx = (ev.get("payload") or {}).get("transitionId")
+                if tid_in_tx not in committed_ids:
+                    outbox.abort(str(tx["txId"]))
+
+    def set_status(
+        self,
+        station_id: str,
+        *,
+        tenant_id: str,
+        status: str,
+        actor: str = "ops",
+        note: str | None = None,
+        transition_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update station status with an independent, retryable transition event."""
+        if status not in ALL_STATION_STATUSES:
+            raise ValueError(f"invalid station status: {status}")
+        if note is not None and not isinstance(note, str):
+            raise ValueError("invalid station status note")
+        explicit_tid: str | None = None
+        if transition_id is not None and transition_id != "":
+            if not isinstance(transition_id, str) or not transition_id.strip() or len(transition_id) > 200:
+                raise ValueError("invalid transition_id")
+            explicit_tid = transition_id.strip()
+        with self._lock:
+            rec = self.get(station_id, tenant_id=tenant_id)
+            ops = rec.get("statusTransitions")
+            if explicit_tid is not None and isinstance(ops, dict) and explicit_tid in ops:
+                prior = ops[explicit_tid]
+                if prior.get("status") != status or prior.get("note") != note:
+                    raise SemanticKeyConflictError(f"transitionId conflict for {explicit_tid}")
+                self._finalize_status_transition(rec, tenant_id=tenant_id, transition_id=explicit_tid)
+                self._cleanup_uncommitted_status_txs(rec, tenant_id=tenant_id)
+                return rec
+            last_tid = rec.get("statusTransitionId")
+            if isinstance(last_tid, str) and last_tid:
+                self._finalize_status_transition(rec, tenant_id=tenant_id, transition_id=last_tid)
+            if rec.get("status") == status:
+                if explicit_tid is not None and self.journal is not None and hasattr(self.journal, "check_semantic_key"):
+                    self.journal.check_semantic_key(
+                        tenant_id=tenant_id,
+                        event_type="station.status",
+                        payload={"status": status, "note": note, "transitionId": explicit_tid},
+                        release_hash=None,
+                        semantic_key=self._status_semantic_key(tenant_id, str(rec["stationId"]), explicit_tid),
+                    )
+                self._cleanup_uncommitted_status_txs(rec, tenant_id=tenant_id)
+                return rec
+            prev_snapshot = copy.deepcopy(rec)
+            trans_id = explicit_tid or new_id()
+            seq = int(rec.get("statusSeq") or 0) + 1
+            transitions = dict(rec.get("statusTransitions") or {})
+            transitions[trans_id] = {"status": status, "note": note, "actor": actor, "seq": seq}
+            rec["status"] = status
+            rec["statusUpdatedAt"] = _now()
+            rec["statusUpdatedBy"] = actor
+            rec["statusSeq"] = seq
+            rec["statusTransitionId"] = trans_id
+            rec["statusTransitions"] = transitions
+            if note is not None:
+                rec["statusNote"] = note
+            else:
+                rec.pop("statusNote", None)
+            payload = {"status": status, "note": note, "transitionId": trans_id}
+            semantic_key = self._status_semantic_key(tenant_id, str(rec["stationId"]), trans_id)
+            self._tx_persisted = False
+            try:
+                emit(
+                    self,
+                    "station.status",
+                    tenant_id=tenant_id,
+                    aggregate_type="Station",
+                    aggregate_id=rec["stationId"],
+                    actor=actor,
+                    payload=payload,
+                    semantic_key=semantic_key,
+                )
+            except Exception:
+                if not self._tx_persisted:
+                    self.stations[station_id] = prev_snapshot
+                raise
+            self._cleanup_uncommitted_status_txs(rec, tenant_id=tenant_id)
+            return rec
 
     def list(self, *, tenant_id: str) -> list[dict[str, Any]]:
         return [s for s in self.stations.values() if s.get("tenantId") == tenant_id]
@@ -211,8 +357,8 @@ class StationDispatcher:
         payload = read_json(self.root / "leases.json") or {}
         self.leases = {l["leaseId"]: l for l in payload.get("leases") or []}
         for job in payload.get("jobs") or []:
-            if self.queue.get(job["jobId"]) is None:
-                self.queue.restore(job)
+            # The lease snapshot is a fallback for jobs missing from the durable store.
+            self.queue.restore(job)
 
     def persist(self) -> None:
         if not self.root:
@@ -221,6 +367,14 @@ class StationDispatcher:
         for lease in self.leases.values():
             job = self.queue.get(lease.get("jobId") or "")
             if job:
+                with self.queue._lock, self.queue._process_lock():
+                    saved = next((r for r in self.queue._store.read_all()
+                                  if r.get("jobId") == job["jobId"]), None) if self.queue._store else None
+                    if saved and saved.get("status") == job.get("status") and not saved.get("cancelRequested"):
+                        for field in ("heartbeatAt", "startedAt"):
+                            if field in job:
+                                saved[field] = job[field]
+                        self.queue._save(saved)
                 jobs.append(job)
         atomic_write_json(self.root / "leases.json", {"leases": list(self.leases.values()), "jobs": jobs})
 
@@ -293,7 +447,10 @@ class StationDispatcher:
             wo = self._require_wo(work_order_id, tenant_id)
             self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
             station = self.stations.get(station_id, tenant_id=tenant_id)
-            if station.get("status") != "ONLINE":
+            station_status = str(station.get("status") or "")
+            if station_status not in DISPATCHABLE_STATION_STATUSES:
+                if station_status in {"MAINTENANCE", "DISABLED"}:
+                    raise PermissionError("station unavailable for dispatch")
                 self.inbox.record(
                     tenant_id=tenant_id,
                     code="STATION_OFFLINE",
@@ -332,8 +489,7 @@ class StationDispatcher:
                     "heartbeatAt": _now(),
                 }
             )
-            job["status"] = "reserved"
-            job["leaseOwner"] = station_id
+            self.queue.set_status(job["jobId"], "reserved", leaseOwner=station_id)
             claimed = job
             lease = {
                 "leaseId": claimed["jobId"],
@@ -556,6 +712,20 @@ class StationDispatcher:
         wo = self.workorders.get(work_order_id)
         if wo.get("state") in {"CANCELLED", "COMPLETED", "REJECTED"}:
             raise PermissionError("cancelled/completed work order cannot dispatch")
+
+    def list_leases(
+        self,
+        *,
+        tenant_id: str,
+        station_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        items = [dict(lease) for lease in self.leases.values() if lease.get("tenantId") == tenant_id]
+        if station_id:
+            items = [lease for lease in items if lease.get("stationId") == station_id]
+        if status:
+            items = [lease for lease in items if lease.get("status") == status]
+        return items
 
     def _lease(self, lease_id: str, tenant_id: str) -> dict[str, Any]:
         lease = self.leases[lease_id]

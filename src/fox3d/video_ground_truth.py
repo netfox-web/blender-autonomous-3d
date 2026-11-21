@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict
 from pathlib import Path
 
-from fox3d.artwork import decode_png_rgb
+from fox3d.artwork import decode_png_rgb, placement_payload, png_size
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.product_truth import derive_canonical_expected_identity, validate_product_truth_render_pack, validate_frozen_authority_semantics
 from fox3d.video_recipe import ROLES, expected_objects, make_recipe, validate_recipe, frame_plan, close_numbers, articulation_gate, integer,finite, scene_context_objects
@@ -51,9 +51,17 @@ def freeze_authority(plat, source, *, sku, product_version, instruction_sha, cod
                     artworkVersion=plat.artwork.artworks[canonical["artworkId"]].get("version", 1),
                     productTruthHash=stable_hash(pack), productTruthGeneration=pack["renderPackId"],
                     cameraRecipeHash=recipe["cameraRecipeHash"], sceneRecipeHash=recipe["sceneRecipeHash"], videoRecipeHash=recipe["videoRecipeHash"])
+    try:
+        source_artwork = copy.deepcopy(plat.artwork.require_artwork(canonical["artworkId"], tenant_id=tenant))
+    except Exception as exc:
+        raise ValueError("source_artwork") from exc
+    if _verified_artwork_hash(source_artwork) != canonical.get("artworkHash"):
+        raise ValueError("source_artwork")
+    if type(frozen.get("placement")) is not dict or stable_hash(placement_payload(frozen["placement"])) != canonical.get("placementHash"):
+        raise ValueError("source_placement")
     payload = plat.artwork.blender_job_payload(tenant_id=tenant, engineering=engineering, placement_ids=[canonical["placementId"]])
     authority = {"instructionSha": instruction_sha, "codeSha": code_sha, "generationId": generation_id,
-                 "sourceFrozen": frozen, "sourcePack": copy.deepcopy(pack), "identity": identity,
+                 "sourceFrozen": frozen, "sourcePack": copy.deepcopy(pack), "sourceArtwork": source_artwork, "identity": identity,
                  "engineering": engineering, "recipe": recipe, "objects": expected_objects(engineering),
                  "payload": payload, "sourceUsedMock": mock, "articulationAuthority": None}
     authority.update(codeTreeClean=code_tree_clean,developmentOnly=development_only)
@@ -61,9 +69,107 @@ def freeze_authority(plat, source, *, sku, product_version, instruction_sha, cod
     return authority
 
 
+def _require_same(actual, expected, code):
+    if type(actual) is not str or not actual or actual != expected:
+        raise ValueError(code)
+
+
+def _artwork_hash(record):
+    """Same preimage as ArtworkFactory.register_artwork, ignoring the stored hash and path."""
+    return stable_hash({k: record[k] for k in record if k not in {"artworkId", "path", "artworkHash"}})
+
+
+def _read_artwork_file(path):
+    if type(path) is not str or not path:
+        raise ValueError("artwork_hash_mismatch")
+    file = Path(path)
+    if file.is_symlink() or not file.is_file():
+        raise ValueError("artwork_hash_mismatch")
+    return file.read_bytes()
+
+
+def _verified_artwork_hash(record):
+    """Recompute the artwork hash from the sealed record and the bytes it names."""
+    if type(record) is not dict:
+        raise ValueError("artwork_hash_mismatch")
+    data = _read_artwork_file(record.get("path"))
+    digest = sha256_bytes(data)
+    size = record.get("size")
+    if type(size) is not int or digest != record.get("sha256") or len(data) != size:
+        raise ValueError("artwork_hash_mismatch")
+    if record.get("assetId") != record.get("artworkId"):
+        raise ValueError("artwork_hash_mismatch")
+    if record.get("mime") == "image/png":
+        if data[:8] != b"\x89PNG\r\n\x1a\n":
+            raise ValueError("artwork_hash_mismatch")
+        width, height = png_size(data)
+        if type(record.get("pixelWidth")) is not int or type(record.get("pixelHeight")) is not int:
+            raise ValueError("artwork_hash_mismatch")
+        if width != record["pixelWidth"] or height != record["pixelHeight"]:
+            raise ValueError("artwork_hash_mismatch")
+    return _artwork_hash(record)
+
+
+def _bind_hash_row(row, *, artwork_hash, placement_hash):
+    if type(row) is not dict:
+        raise ValueError("artwork_hash_mismatch")
+    _require_same(row.get("artworkHash"), artwork_hash, "artwork_hash_mismatch")
+    _require_same(row.get("placementHash"), placement_hash, "placement_hash_mismatch")
+
+
+def _bind_identity(a):
+    """Fail closed when SKU or product hashes disagree with the frozen source."""
+    ident = a["identity"]
+    frozen = a["sourceFrozen"]
+    place = frozen.get("placement") if type(frozen.get("placement")) is dict else {}
+    if type(ident.get("sku")) is not str or not ident.get("sku"):
+        raise ValueError("sku_mismatch")
+    _require_same(ident.get("engineeringHash"), frozen.get("engineeringHash"), "engineering_hash_mismatch")
+    _require_same(place.get("engineeringHash"), ident.get("engineeringHash"), "engineering_hash_mismatch")
+    eng = a.get("engineering")
+    if type(eng) is not dict:
+        raise ValueError("engineering_hash_mismatch")
+    from fox3d.parametric import CabinetSpec
+    try:
+        recomputed = CabinetSpec.model_validate(eng).engineering_hash()
+    except Exception as exc:
+        raise ValueError("engineering_hash_mismatch") from exc
+    if recomputed != ident.get("engineeringHash"):
+        raise ValueError("engineering_hash_mismatch")
+    pack = a.get("sourcePack")
+    expected = pack.get("expectedIdentity") if type(pack) is dict else None
+    worker = pack.get("workerEvidence") if type(pack) is dict else None
+    payload = a.get("payload") if type(a.get("payload")) is dict else {}
+    items = payload.get("artworkPlacements")
+    item = items[0] if type(items) is list and len(items) == 1 and type(items[0]) is dict else None
+    source_artwork = a.get("sourceArtwork")
+    artwork_hash = _verified_artwork_hash(source_artwork)
+    if type(item) is not dict or type(source_artwork) is not dict:
+        raise ValueError("artwork_hash_mismatch")
+    payload_bytes = _read_artwork_file(item.get("imagePath"))
+    if sha256_bytes(payload_bytes) != source_artwork.get("sha256"):
+        raise ValueError("artwork_hash_mismatch")
+    artwork_sha = source_artwork.get("sha256")
+    artwork_id = source_artwork.get("artworkId")
+    for row in (ident, pack, expected, worker, item):
+        if type(row) is not dict:
+            raise ValueError("artwork_hash_mismatch")
+        _require_same(row.get("artworkSha256"), artwork_sha, "artwork_hash_mismatch")
+        _require_same(row.get("artworkId"), artwork_id, "artwork_hash_mismatch")
+    _require_same(place.get("artworkId"), artwork_id, "artwork_hash_mismatch")
+    _require_same(source_artwork.get("tenantId"), ident.get("tenantId"), "artwork_hash_mismatch")
+    placement_hash = stable_hash(placement_payload(place))
+    placement_id = place.get("placementId")
+    for row in (ident, pack, expected, worker, item):
+        _require_same(row.get("placementId"), placement_id, "placement_hash_mismatch")
+    for row in (ident, place, pack, expected, worker, item):
+        _bind_hash_row(row, artwork_hash=artwork_hash, placement_hash=placement_hash)
+
+
 def check_authority(a, seal):
     if a.get("authorityHash") != seal or stable_hash({k:v for k,v in a.items() if k != "authorityHash"}) != seal:
         raise ValueError("authority_seal")
+    _bind_identity(a)
     validate_recipe(a["recipe"], a["engineering"])
     if a["recipe"]["recipeId"]=="ARTWORK_DETAIL_6S" and a["recipe"]["detailObject"]!=a["identity"]["objectName"]:raise ValueError("detail_wrong_artwork_component")
     if a["objects"] != expected_objects(a["engineering"]): raise ValueError("geometry_authority")
@@ -183,6 +289,13 @@ def frame_artifacts(frame):
 def validate_manifest(manifest, *, authority, authority_seal, receipt, receipt_seal, dam=None):
     try:
         check_authority(authority, authority_seal)
+        ident = manifest.get("identity")
+        if type(ident) is not dict:
+            raise ValueError("identity_mismatch")
+        for key, code in (("sku", "sku_mismatch"), ("engineeringHash", "engineering_hash_mismatch"),
+                          ("artworkHash", "artwork_hash_mismatch"), ("placementHash", "placement_hash_mismatch")):
+            if ident.get(key) != authority["identity"].get(key):
+                raise ValueError(code)
         if stable_hash(receipt) != receipt_seal: raise ValueError("receipt_seal")
         if receipt["authorityHash"] != authority_seal: raise ValueError("receipt_authority")
         expected = {"schema": "VIDEO_GROUND_TRUTH_MANIFEST_V1", "authorityHash": authority_seal,

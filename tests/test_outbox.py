@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import EventJournal, JournalCommitError, SemanticKeyConflictError
 from fox3d.outbox import BUSINESS_COMMITTED, PREPARED, CommitOutbox
+from fox3d.storelock import FileLock
 import fox3d.journal as journal_mod
 import fox3d.outbox as outbox_mod
 
@@ -608,7 +610,7 @@ def test_abort_under_shared_lock_preserves_late_committed_tx_when_journal_append
     orig_abort = outbox1.abort
     triggered = {"done": False}
 
-    def mark_before_abort(tid: str) -> bool:
+    def mark_before_abort(tid: str) -> bool | None:
         if not triggered["done"] and tid == tx2_id:
             triggered["done"] = True
             outbox2.mark_business_committed(tx2_id, observed_generation=2)
@@ -838,4 +840,213 @@ def test_reconcile_and_abort_preserve_journal_and_tx_on_stat_eio(
     assert [e["aggregateId"] for e in events] == ["wo-1", "wo-2"]
     assert events[0]["eventId"] == first["eventId"]
     assert reloaded_journal.verify("ta")["ok"] is True
+
+
+def test_hold_keeps_inflight_tx_when_peer_reconciles_and_recovers_after_release(tmp_path: Path) -> None:
+    """Peer reconcile during hold() must not finalize or abort; after release it still can."""
+    owner = CommitOutbox(tmp_path / "tx")
+    peer = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = peer
+
+    with owner.hold():
+        tx_a = owner.prepare(_make_event(1, tenant_id="ta"))
+        tx_b = owner.prepare(_make_event(2, tenant_id="tb"))
+        res = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
+        assert res == {"finalized": 0, "aborted": 0, "failed": [], "open": 2}
+        assert read_json(owner._path(tx_a["txId"]))["status"] == PREPARED
+        assert read_json(owner._path(tx_b["txId"]))["status"] == PREPARED
+        assert [row["txId"] for row in peer.list_open(tenant_id="ta")] == [tx_a["txId"]]
+        assert [row["txId"] for row in peer.list_open(tenant_id="tb")] == [tx_b["txId"]]
+        marked = owner.mark_business_committed(tx_a["txId"], observed_generation=1)
+        assert marked["status"] == BUSINESS_COMMITTED
+        # Callback says the business change is absent. A peer must still not abort it
+        # while this hold() owns the file.
+        res_late = peer.reconcile(journal=journal, business_committed=lambda _tx: False)
+        assert res_late["aborted"] == 0
+        assert res_late["finalized"] == 0
+        assert read_json(owner._path(tx_a["txId"]))["status"] == BUSINESS_COMMITTED
+        assert read_json(owner._path(tx_b["txId"]))["status"] == PREPARED
+        owner.complete(tx_a["txId"])
+
+    assert not owner._path(tx_a["txId"]).exists()
+    assert journal.list("ta") == []
+    assert journal.list("tb") == []
+    # tx_b was left PREPARED and the hold has released its claim, so recovery aborts it.
+    res_abort = peer.reconcile(journal=journal, business_committed=lambda _tx: False)
+    assert res_abort == {"finalized": 0, "aborted": 1, "failed": [], "open": 0}
+    assert not owner._path(tx_b["txId"]).exists()
+    assert peer.list_open() == []
+
+
+def test_hold_exit_on_error_lets_peer_finalize_business_committed_tx_once(tmp_path: Path) -> None:
+    owner = CommitOutbox(tmp_path / "tx")
+    peer = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = peer
+    tx_id = ""
+    with pytest.raises(RuntimeError, match="interrupted"):
+        with owner.hold():
+            tx = owner.prepare(_make_event(1))
+            tx_id = str(tx["txId"])
+            owner.mark_business_committed(tx_id)
+            raise RuntimeError("interrupted")
+    assert read_json(owner._path(tx_id))["status"] == BUSINESS_COMMITTED
+    res = peer.reconcile(journal=journal, business_committed=lambda _tx: False)
+    assert res == {"finalized": 1, "aborted": 0, "failed": [], "open": 0}
+    again = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
+    assert again == {"finalized": 0, "aborted": 0, "failed": [], "open": 0}
+    events = journal.list("ta")
+    assert len(events) == 1
+    assert events[0]["aggregateId"] == "wo-1"
+    assert events[0]["semanticKey"] == "ta::outbox::1"
+    assert journal.verify("ta")["ok"] is True
+
+
+# Hang guard only. The peer sets `done` before returning, including on failure,
+# so a run that finishes does not wait this long. A slow host must not need the
+# ceiling for the assertions below.
+_PEER_SYNC_TIMEOUT_S = 30.0
+
+
+def _raise_if_peer_failed(outcome: dict[str, Any]) -> None:
+    if "peer_error" not in outcome:
+        return
+    peer_error = outcome["peer_error"]
+    if isinstance(peer_error, BaseException):
+        raise AssertionError(f"peer thread failed: {type(peer_error).__name__}: {peer_error}") from peer_error
+    raise AssertionError(f"peer thread failed: {peer_error!r}")
+
+
+def test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path: Path) -> None:
+    owner = CommitOutbox(tmp_path / "tx")
+    peer = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = peer
+    ready = threading.Event()
+    done = threading.Event()
+    outcome: dict[str, Any] = {}
+    tx_id = ""
+
+    def peer_side() -> None:
+        try:
+            ready.wait()
+            outcome["abort"] = peer.abort(tx_id)
+            peer.complete(tx_id)
+            outcome["reconcile"] = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
+            outcome["exists"] = owner._path(tx_id).exists()
+            outcome["status"] = (read_json(owner._path(tx_id)) or {}).get("status")
+        except Exception as exc:
+            # Do not re-raise: pytest treats that as an unhandled thread exception
+            # and the failure would no longer be this assertion on the main thread.
+            outcome["peer_error"] = exc
+        finally:
+            done.set()
+
+    # daemon: if the peer is still blocked when the hang guard fires, the
+    # process can exit instead of waiting out the CI step.
+    worker = threading.Thread(target=peer_side, name="outbox-hold-peer", daemon=True)
+    worker.start()
+    try:
+        with owner.hold():
+            tx = owner.prepare(_make_event(1))
+            tx_id = str(tx["txId"])
+            ready.set()
+            if not done.wait(timeout=_PEER_SYNC_TIMEOUT_S):
+                raise AssertionError("peer thread did not finish")
+            _raise_if_peer_failed(outcome)
+            assert outcome["abort"] is None
+            assert outcome["exists"] is True
+            assert outcome["status"] == PREPARED
+            assert outcome["reconcile"] == {"finalized": 0, "aborted": 0, "failed": [], "open": 1}
+            owner.mark_business_committed(tx_id)
+            owner.complete(tx_id)
+    finally:
+        ready.set()
+        worker.join(timeout=_PEER_SYNC_TIMEOUT_S)
+    if worker.is_alive():
+        raise AssertionError("peer thread still running after the owner released it")
+    assert not owner._path(tx_id).exists()
+    assert journal.list("ta") == []
+    assert peer.list_open() == []
+
+
+def test_peer_abort_exception_fails_hold_test_with_the_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """peer.abort raising fails the hold test with that error instead of hanging.
+
+    The peer always sets `done` in a finally block and stores the exception.
+    The main thread then fails with that error, so the abort message is the
+    test failure instead of an unhandled thread exception or a hung wait.
+    """
+
+    def explode(self: CommitOutbox, tx_id: str) -> bool | None:
+        raise RuntimeError("peer abort exploded")
+
+    monkeypatch.setattr(CommitOutbox, "abort", explode)
+    with pytest.raises(AssertionError, match=r"peer thread failed: RuntimeError: peer abort exploded") as raised:
+        test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path)
+    cause = raised.value.__cause__
+    assert isinstance(cause, RuntimeError)
+    assert str(cause) == "peer abort exploded"
+    assert cause.__traceback__ is not None
+
+
+def test_claim_held_outside_this_process_blocks_cleanup_until_released(tmp_path: Path) -> None:
+    """A claim file locked without this process's registry stands in for another process."""
+    owner = CommitOutbox(tmp_path / "tx")
+    peer = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = peer
+    tx = owner.prepare(_make_event(1))
+    tx_id = str(tx["txId"])
+    claim = FileLock(owner._claim_path(tx_id))
+    claim.acquire()
+    try:
+        res = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
+        assert res == {"finalized": 0, "aborted": 0, "failed": [], "open": 1}
+        peer.complete(tx_id)
+        assert peer.abort(tx_id) is None
+        assert read_json(owner._path(tx_id))["status"] == PREPARED
+    finally:
+        claim.release()
+    res_abort = peer.reconcile(journal=journal, business_committed=lambda _tx: False)
+    assert res_abort == {"finalized": 0, "aborted": 1, "failed": [], "open": 0}
+    assert not owner._path(tx_id).exists()
+    assert journal.list("ta") == []
+
+
+def test_reconcile_abort_blocked_during_claim_probe_does_not_finalize(tmp_path: Path) -> None:
+    """Concurrent claim probing during business_committed must not write journal events."""
+    outbox = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = outbox
+    tx = outbox.prepare(_make_event(1))
+    tx_id = str(tx["txId"])
+    claim_path = outbox._claim_path(tx_id)
+    probe_holder: dict[str, FileLock] = {}
+
+    def probe_during_callback(_tx: dict[str, Any]) -> bool:
+        probe = FileLock(claim_path)
+        assert probe.try_acquire(), "simulated peer must hold claim before abort runs"
+        probe_holder["probe"] = probe
+        return False
+
+    res = outbox.reconcile(journal=journal, business_committed=probe_during_callback)
+    assert res == {"finalized": 0, "aborted": 0, "failed": [], "open": 1}
+    assert journal.list("ta") == []
+    assert read_json(outbox._path(tx_id))["status"] == PREPARED
+
+    probe = probe_holder.pop("probe")
+    probe.release()
+    try:
+        claim_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    res_after = outbox.reconcile(journal=journal, business_committed=lambda _tx: False)
+    assert res_after == {"finalized": 0, "aborted": 1, "failed": [], "open": 0}
+    assert journal.list("ta") == []
+    assert not outbox._path(tx_id).exists()
 

@@ -70,13 +70,12 @@ def test_twin_store_accepts_sku_with_path_separators(tmp_path: Path, sku: str) -
     assert "/" not in Path(obj.path).name.replace("\\", "/")
 
 
-def test_api_create_twin_and_upload_accept_sku_with_slashes(tmp_path: Path) -> None:
+def test_api_create_twin_rejects_sku_with_slashes_and_upload_encodes(tmp_path: Path) -> None:
     platform = Platform(root=tmp_path / "data", mock_blender=True)
     client = TestClient(create_app(platform), raise_server_exceptions=False)
     headers = {"X-Tenant-Id": "sonaqueen-home"}
     created = client.post("/api/digital-twins", json={"sku": "ABC/123"}, headers=headers)
-    assert created.status_code == 200, created.text
-    assert created.json()["sku"] == "ABC/123"
+    assert created.status_code == 422
     uploaded = client.post(
         "/api/digital-twins/upload",
         headers=headers,

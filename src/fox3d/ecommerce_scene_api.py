@@ -8,6 +8,7 @@ from typing import Any
 import json
 import logging
 import os
+import re
 import urllib.error
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -15,6 +16,8 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from fox3d.ecommerce_scene_studio import (
     EcommerceSceneStore,
+    BatchConflict,
+    SceneStoreUnavailable,
     glb_upload_max_base64_chars,
     glb_upload_max_bytes,
 )
@@ -68,7 +71,13 @@ def ecommerce_scene_router(provider) -> APIRouter:
         root = Path(plat.root).resolve()
         with lock:
             if root not in stores:
-                stores[root] = EcommerceSceneStore(plat)
+                created = EcommerceSceneStore(plat)
+                stores[root] = created
+                try:
+                    # Batches accepted before a restart but never claimed by a worker would otherwise never run.
+                    created.recover_pending_batches()
+                except Exception as exc:  # reads still recover each batch lazily
+                    log.warning("Startup batch recovery failed: %s", exc)
             return stores[root]
 
     def tenant(x_tenant_id: str | None) -> str:
@@ -76,6 +85,10 @@ def ecommerce_scene_router(provider) -> APIRouter:
         if not val or val == "system" or len(val) > 120:
             raise HTTPException(400, "請提供有效的工作區 X-Tenant-Id")
         return val
+
+    def valid_id(value: str) -> None:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value):
+            raise HTTPException(404, "找不到資源")
 
     @router.get("/admin/recipes/scenes", response_class=HTMLResponse)
     def scene_studio_page() -> HTMLResponse:
@@ -99,6 +112,8 @@ def ecommerce_scene_router(provider) -> APIRouter:
     def save_scene(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:
             return store().save_scene(tenant(x_tenant_id), payload)
+        except SceneStoreUnavailable as exc:
+            raise HTTPException(503, "場景資料暫時無法讀取") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
@@ -106,6 +121,10 @@ def ecommerce_scene_router(provider) -> APIRouter:
     def delete_scene(scene_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:
             return store().delete_scene(tenant(x_tenant_id), scene_id)
+        except SceneStoreUnavailable as exc:
+            raise HTTPException(503, "場景資料暫時無法讀取") from exc
+        except KeyError as exc:
+            raise HTTPException(404, "找不到此場景") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
@@ -134,7 +153,8 @@ def ecommerce_scene_router(provider) -> APIRouter:
 
     @router.get("/api/ecommerce-scenes/polyhaven-thumb/{asset_id}")
     def polyhaven_thumb(asset_id: str) -> FileResponse:
-        safe_id = "".join(c for c in asset_id if c.isalnum() or c in ("_", "-"))
+        valid_id(asset_id)
+        safe_id = asset_id
         thumb = Path(__file__).resolve().parents[2] / "assets" / "models" / "polyhaven" / "thumbs" / f"{safe_id}.png"
         if not thumb.exists():
             raise HTTPException(404, "找不到預覽縮圖")
@@ -367,19 +387,58 @@ def ecommerce_scene_router(provider) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    @router.get("/api/ecommerce-scenes/batches")
+    def list_batches(
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=15, ge=1, le=50),
+        state: str | None = Query(default=None),
+        workspace: str | None = Query(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id or workspace)
+        try:
+            return store().list_batches(tid, offset=offset, limit=limit, state=state)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @router.post("/api/ecommerce-scenes/batches", status_code=202)
     def start_batch(payload: dict[str, Any], request: Request, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:
             return store().start_matrix_batch(tenant(x_tenant_id), payload, public_base_url=_public_base_url(request))
+        except BatchConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except SceneStoreUnavailable as exc:
+            raise HTTPException(503, "批次資料暫時無法讀取") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
     @router.get("/api/ecommerce-scenes/batches/{batch_id}")
     def get_batch(batch_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        valid_id(batch_id)
         try:
             return store().get_batch(tenant(x_tenant_id), batch_id)
         except KeyError as exc:
-            raise HTTPException(404, str(exc)) from exc
+            raise HTTPException(404, "找不到資源") from exc
+
+    @router.post("/api/ecommerce-scenes/batches/{batch_id}/cancel")
+    def cancel_batch(batch_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        valid_id(batch_id)
+        try:
+            return store().cancel_batch(tenant(x_tenant_id), batch_id)
+        except KeyError as exc:
+            raise HTTPException(404, "找不到資源") from exc
+        except BatchConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @router.delete("/api/ecommerce-scenes/batches/{batch_id}")
+    def delete_batch(batch_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        valid_id(batch_id)
+        try:
+            return store().delete_batch(tenant(x_tenant_id), batch_id)
+        except KeyError as exc:
+            raise HTTPException(404, "找不到資源") from exc
+        except BatchConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @router.get("/api/ecommerce-scenes/batches/{batch_id}/items/{item_id}/download/{fmt}")
     def download_item(
@@ -391,11 +450,13 @@ def ecommerce_scene_router(provider) -> APIRouter:
         variant: int = Query(default=1, ge=1, le=4),
         x_tenant_id: str | None = Header(default=None),
     ) -> FileResponse:
+        valid_id(batch_id)
+        valid_id(item_id)
         tid = tenant(x_tenant_id or workspace)
         try:
             target = store().item_asset_path(tid, batch_id, item_id, fmt, variant=variant)
         except KeyError as exc:
-            raise HTTPException(404, str(exc)) from exc
+            raise HTTPException(404, "找不到資源") from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         media = {
@@ -424,11 +485,12 @@ def ecommerce_scene_router(provider) -> APIRouter:
         workspace: str | None = Query(default=None),
         x_tenant_id: str | None = Header(default=None),
     ) -> Response:
+        valid_id(batch_id)
         tid = tenant(x_tenant_id or workspace)
         try:
             data = store().build_batch_zip(tid, batch_id)
         except KeyError as exc:
-            raise HTTPException(404, str(exc)) from exc
+            raise HTTPException(404, "找不到資源") from exc
         return Response(
             content=data,
             media_type="application/zip",
