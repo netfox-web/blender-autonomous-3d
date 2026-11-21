@@ -170,3 +170,31 @@ def test_factory_confirm_boxes_start_hidden() -> None:
     html = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/factory.html").read_text(encoding="utf-8")
     boxes = re.findall(r'<div[^>]*class="fc-confirm"[^>]*>', html)
     assert boxes and all(" hidden" in b for b in boxes)
+
+
+def test_factory_js_loads_quote_list_api() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/factory.js").read_text(encoding="utf-8")
+    assert "/api/factory/quotes" in js
+    assert "quotesRes" in js
+    assert "quotesRes.data.items" in js
+
+
+def test_factory_quote_list_newest_first_for_page_default(client: TestClient) -> None:
+    """API contract: items[0] is newest so the admin page default detail matches the latest quote."""
+    headers = TENANT
+    quote_ids: list[str] = []
+    for _ in range(3):
+        run_res = client.post(
+            "/api/factory/run",
+            headers=headers,
+            json={"text": "鞋櫃", "render": False},
+        )
+        assert run_res.status_code == 200
+        quote_ids.append(run_res.json()["quote"]["quoteId"])
+    listed = client.get("/api/factory/quotes", headers=headers)
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert len(items) >= 3
+    assert items[0]["quoteId"] == quote_ids[-1]
