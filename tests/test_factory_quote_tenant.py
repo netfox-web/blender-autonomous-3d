@@ -31,8 +31,14 @@ def test_quote_read_and_approve_are_tenant_scoped(platform) -> None:  # noqa: AN
 
     ok = client.post(f"/api/factory/quotes/{quote_id}/approve", json={"actor": "ops"}, headers={"X-Tenant-Id": "t1"})
     assert ok.status_code == 200 and ok.json()["gate"]["status"] == "APPROVED"
-    # approving twice is a conflict, not a 500
-    assert client.post(f"/api/factory/quotes/{quote_id}/approve", json={"actor": "ops"}, headers={"X-Tenant-Id": "t1"}).status_code == 409
+    first = ok.json()
+    assert first["gate"].get("approvedAt")
+    again = client.post(f"/api/factory/quotes/{quote_id}/approve", json={"actor": "other-actor"}, headers={"X-Tenant-Id": "t1"})
+    assert again.status_code == 200
+    second = again.json()
+    assert second["gate"]["status"] == "APPROVED"
+    assert second["gate"]["actor"] == first["gate"]["actor"]
+    assert second["gate"]["approvedAt"] == first["gate"]["approvedAt"]
 
 
 def test_revise_unknown_or_foreign_product_is_404_not_500(platform) -> None:  # noqa: ANN001 - conftest fixture
