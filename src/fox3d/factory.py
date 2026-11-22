@@ -30,6 +30,7 @@ from fox3d.manufacturing import (
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json
 from fox3d.parametric import BOMEngine, CabinetSpec
+from fox3d.render_store import ParametricStore
 from fox3d.space import SpaceConstraintEngine, SpaceDigitalTwin, WallFitSolver
 from fox3d.storelock import FileLock
 
@@ -162,7 +163,11 @@ class FurnitureFactory:
             raw_loc = local.get(key)
             d: dict[str, Any] = raw_d if isinstance(raw_d, dict) else {}
             loc: dict[str, Any] = raw_loc if isinstance(raw_loc, dict) else {}
-            merged[key] = cls._merge_record_maps(d, loc, pick=cls._pick_disk_on_conflict)
+            if key == "parametrics":
+                # An older factory snapshot can fill gaps, but current product records win.
+                merged[key] = cls._merge_record_maps(d, loc, pick=lambda _saved, current: current)
+            else:
+                merged[key] = cls._merge_record_maps(d, loc, pick=cls._pick_disk_on_conflict)
 
         merged["quoteRunIndex"] = cls._rebuild_quote_run_index(merged_runs)
 
@@ -203,7 +208,10 @@ class FurnitureFactory:
             if isinstance(target, dict):
                 for pid, rec in parametrics.items():
                     if isinstance(rec, dict):
-                        target[str(pid)] = rec
+                        if isinstance(target, ParametricStore):
+                            target.restore_missing(str(pid), rec)
+                        else:
+                            target.setdefault(str(pid), rec)
 
     def _sync_from_disk(self) -> None:
         path = self._state_path()
@@ -285,15 +293,18 @@ class FurnitureFactory:
     def list_quote_summaries(self, tenant_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
         self._sync_from_disk()
         lim = max(1, min(int(limit), 100))
+        with self._lock:
+            runs = tuple(self.runs.values())
+            quotes = self.quotes.copy()
         rows: list[tuple[str, dict[str, Any]]] = []
-        for run in self.runs.values():
+        for run in runs:
             if run.get("tenantId") != tenant_id:
                 continue
             q = run.get("quote") or {}
             qid = q.get("quoteId")
             if not qid:
                 continue
-            stored_q = self.quotes.get(str(qid)) or q
+            stored_q = quotes.get(str(qid)) or q
             base_q = dict(stored_q)
             gate = run.get("gate") or {}
             space_info = run.get("space") or {}

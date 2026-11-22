@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from fox3d.api import create_app
 from fox3d.factory import FurnitureFactory
 from fox3d.platform import Platform
+from fox3d.render_store import RenderStore
 
 
 def _run(client: TestClient, tenant: str) -> dict:
@@ -449,6 +450,81 @@ def test_restart_restores_parametric_products_and_revision(tmp_path: Path) -> No
         headers={"X-Tenant-Id": "tenant-a"},
     )
     assert again.status_code == 200
+
+
+@pytest.mark.parametrize("operation", ["persist", "run", "approve", "restart"])
+def test_factory_snapshot_keeps_newer_parametric_preview(tmp_path: Path, operation: str) -> None:
+    root = tmp_path / "data"
+    plat = Platform(root=root, mock_blender=True)
+    run = plat.factory.run(tenant_id="tenant-a", text="鞋櫃", render=False)
+    assert run.get("status") != "failed"
+    product_id = run["assembly"]["cabinets"][0]["cabinetId"]
+    plat.parametrics[product_id] = {**plat.parametrics[product_id], "previewJobId": "new-preview"}
+
+    if operation == "persist":
+        plat.factory.persist()
+    elif operation == "run":
+        assert plat.factory.run(tenant_id="tenant-a", text="衣櫃", render=False).get("status") != "failed"
+    elif operation == "approve":
+        assert plat.factory.approve(run["runId"], actor="test")["gate"]["status"] == "APPROVED"
+    else:
+        plat = Platform(root=root, mock_blender=True)
+
+    assert plat.parametrics[product_id]["previewJobId"] == "new-preview"
+    stored = RenderStore(root / "render_core" / "parametrics").read("tenant-a", product_id)
+    assert stored is not None
+    assert stored["previewJobId"] == "new-preview"
+
+
+def test_factory_hydration_prefers_product_file_for_missing_local_product(tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    reader = Platform(root=root, mock_blender=True)
+    writer = Platform(root=root, mock_blender=True)
+    run = writer.factory.run(tenant_id="tenant-a", text="鞋櫃", render=False)
+    assert run.get("status") != "failed"
+    product_id = run["assembly"]["cabinets"][0]["cabinetId"]
+    assert product_id not in reader.parametrics
+    writer.parametrics[product_id] = {**writer.parametrics[product_id], "previewJobId": "new-preview"}
+
+    reader.factory._sync_from_disk()
+
+    assert reader.parametrics[product_id]["previewJobId"] == "new-preview"
+    stored = RenderStore(root / "render_core" / "parametrics").read("tenant-a", product_id)
+    assert stored is not None
+    assert stored["previewJobId"] == "new-preview"
+
+
+def test_quote_list_can_finish_while_another_run_is_added(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    plat = Platform(root=tmp_path / "data", mock_blender=True)
+    fac = plat.factory
+    first = fac.run(tenant_id="tenant-a", text="鞋櫃", render=False)
+    assert first.get("status") != "failed"
+    reader_has_row = Event()
+    resume_reader = Event()
+
+    class PausedRun(dict[str, Any]):
+        def get(self, key: str, default: Any = None) -> Any:
+            if key == "tenantId":
+                reader_has_row.set()
+                assert resume_reader.wait(timeout=10)
+            return super().get(key, default)
+
+    fac.runs[first["runId"]] = PausedRun(fac.runs[first["runId"]])
+    monkeypatch.setattr(fac, "_sync_from_disk", lambda: None)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        listing = pool.submit(fac.list_quote_summaries, "tenant-a")
+        try:
+            assert reader_has_row.wait(timeout=10)
+            second = pool.submit(fac.run, tenant_id="tenant-a", text="衣櫃", render=False).result(timeout=10)
+            assert second.get("status") != "failed"
+        finally:
+            resume_reader.set()
+        assert {row["runId"] for row in listing.result(timeout=10)} == {first["runId"]}
+
+    assert {row["runId"] for row in fac.list_quote_summaries("tenant-a")} == {first["runId"], second["runId"]}
 
 
 def test_parametric_snapshot_does_not_walk_the_live_dictionary(tmp_path: Path) -> None:

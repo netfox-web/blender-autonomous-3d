@@ -61,6 +61,18 @@ class ParametricStore(dict[str, dict[str, Any]]):
         self.store.write(value['spec']['tenantId'], key, value)
         super().__setitem__(key, value)
 
+    def restore_missing(self, key: str, fallback: dict[str, Any]) -> None:
+        """Hydrate from the current product file or a legacy factory snapshot."""
+        if key in self:
+            return
+        spec = fallback.get("spec")
+        tenant = spec.get("tenantId") if isinstance(spec, dict) else None
+        if not isinstance(tenant, str):
+            return
+        stored = self.store.read(tenant, key)
+        # Hydration must not publish the factory snapshot as a new product revision.
+        super().setdefault(key, stored if stored is not None else fallback)
+
     def pop(self, key: str, *args: Any) -> Any:
         if key in self:
             value = self[key]
